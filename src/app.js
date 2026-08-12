@@ -275,7 +275,7 @@ function filePicker(action, accept, label, fileName = '') {
 }
 
 function sourceIcon(source) {
-  const names = { Unique: 'tag', Custom: 'tools', Created: 'activity', Item: 'tools', 'D&D': 'mass' };
+  const names = { Custom: 'tools', Created: 'activity', Item: 'tools', 'D&D': 'mass' };
   return source.image ? `<img class="source-mark" src="${escape(source.image)}" alt="">` : `<span class="source-mark source-icon">${icon(names[source.name] || 'tools')}</span>`;
 }
 

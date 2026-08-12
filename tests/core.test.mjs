@@ -244,8 +244,8 @@ test('managed weapon categories decompose into reusable direct Tags', () => {
 
 test('data-defined item source defaults are editable and never resurrect after user deletion', () => {
   const state = createState('Test', 'Tester');
-  assert.deepEqual(state.itemSources.map(source => source.name), ['Unique', 'Custom', 'Created', 'Item', 'D&D']);
-  assert.match(state.itemSources[1].description, /Tag/);
+  assert.deepEqual(state.itemSources.map(source => source.name), ['Custom', 'Created', 'Item', 'D&D']);
+  assert.match(state.itemSources[0].description, /Tag/);
   const removedId = state.itemSources[0].id;
   state.itemSources = state.itemSources.slice(1);
   syncProductDefaults(state);
@@ -255,13 +255,20 @@ test('data-defined item source defaults are editable and never resurrect after u
 
   const migration = createState('Migration', 'Tester');
   migration.sourceDefaultsVersion = 1;
-  migration.itemSources[1].description = 'Create an item, Container item, or Character.';
+  migration.itemSources[0].description = 'Create an item, Container item, or Character.';
   syncProductDefaults(migration);
-  assert.match(migration.itemSources[1].description, /Tag/);
+  assert.match(migration.itemSources[0].description, /Tag/);
   migration.sourceDefaultsVersion = 1;
-  migration.itemSources[1].description = 'My intentionally customized description.';
+  migration.itemSources[0].description = 'My intentionally customized description.';
   syncProductDefaults(migration);
-  assert.equal(migration.itemSources[1].description, 'My intentionally customized description.');
+  assert.equal(migration.itemSources[0].description, 'My intentionally customized description.');
+
+  const prior = createState('Prior defaults', 'Tester');
+  prior.sourceDefaultsVersion = 10;
+  prior.itemSources.unshift({ id: '20000000-0000-4000-8000-000000000001', name: 'Unique', description: 'Create a one-off Item, Container, Character, or Tag for this destination.', behavior: 'custom-create', query: '', presetTagNames: ['Unique'], enabled: true });
+  syncProductDefaults(prior);
+  assert.equal(prior.itemSources.some(source => source.name === 'Unique'), false);
+  assert.deepEqual(prior.itemSources.map(source => source.name), ['Custom', 'Created', 'Item', 'D&D']);
 });
 
 test('product migration uses the compact D&D5e Tag and managed refresh restores a purged source Tag', () => {

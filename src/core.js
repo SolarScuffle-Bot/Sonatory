@@ -18,12 +18,11 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 export const SCHEMA_VERSION = 1;
 export const MANAGED_ITEM_COUNT = SRD_ITEMS.length;
 export const MANAGED_SOURCE_VERSION = SRD_SOURCE.version;
-export const SOURCE_DEFAULTS_VERSION = 10;
+export const SOURCE_DEFAULTS_VERSION = 11;
 
 /** @returns {ItemSource[]} */
 export function createDefaultItemSources() {
   return [
-    { id: '20000000-0000-4000-8000-000000000001', name: 'Unique', description: 'Create a one-off Item, Container, Character, or Tag for this destination.', behavior: 'custom-create', query: '', presetTagNames: ['Unique'], enabled: true },
     { id: '20000000-0000-4000-8000-000000000002', name: 'Custom', description: 'Create an Item, Container, Character, or Tag.', behavior: 'custom-create', query: '', enabled: true },
     { id: '20000000-0000-4000-8000-000000000004', name: 'Created', description: 'Browse items and Containers created in this Vault.', behavior: 'browse-query', query: '+Created', enabled: true },
     { id: '20000000-0000-4000-8000-000000000003', name: 'Item', description: 'Browse every reusable item definition you can see.', behavior: 'browse-query', query: '+Item', enabled: true },
@@ -143,6 +142,12 @@ export function syncProductDefaults(state) {
     if (container && dnd) container.tags = container.tags.filter(tagId => tagId !== dnd.id);
     sourcesChanged = true;
     state.sourceDefaultsVersion = 10;
+  }
+  if ((state.sourceDefaultsVersion || 0) < 11) {
+    const priorLength = state.itemSources.length;
+    state.itemSources = state.itemSources.filter(source => source.id !== '20000000-0000-4000-8000-000000000001');
+    if (state.itemSources.length !== priorLength) sourcesChanged = true;
+    state.sourceDefaultsVersion = 11;
   }
   return { tagged, sourcesChanged };
 }
