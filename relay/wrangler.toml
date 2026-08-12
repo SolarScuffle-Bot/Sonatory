@@ -1,0 +1,12 @@
+name = "sonatory-relay"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[[durable_objects.bindings]]
+name = "SYNC_SPACES"
+class_name = "SyncSpace"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncSpace"]
+

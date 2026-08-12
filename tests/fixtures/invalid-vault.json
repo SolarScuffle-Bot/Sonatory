@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "vault": {
+    "id": "not-a-valid-guid",
+    "name": "Broken fixture"
+  }
+}

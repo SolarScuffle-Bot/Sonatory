@@ -1,0 +1,12 @@
+{
+  "name": "Sonatory",
+  "short_name": "Sonatory",
+  "description": "A local-first inventory workspace for people and parties.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d100c",
+  "theme_color": "#11150f",
+  "icons": [
+    { "src": "assets/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
