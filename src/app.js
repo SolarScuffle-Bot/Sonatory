@@ -1,5 +1,5 @@
 // @ts-check
-import { canMove, commit, compareDecimal, computeAllWeights, computeWeight, createState, decimalToString, formatExactDecimal, guid, isEntityVisible, managedBaseEntity, MANAGED_ITEM_COUNT, MANAGED_SOURCE_VERSION, parseDecimal, parseQuery, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, SEARCH_OPERATORS, searchEntities, syncManagedItems, syncProductDefaults, syncQueryBindings, undo } from './core.js';
+import { canMove, commit, compareDecimal, computeAllWeights, computeWeight, createState, decimalToString, formatExactDecimal, guid, isEntityVisible, linkedContainerIds, managedBaseEntity, MANAGED_ITEM_COUNT, MANAGED_SOURCE_VERSION, parseDecimal, parseQuery, prepareContainerLink, prepareContainerUnlink, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, SEARCH_OPERATORS, searchEntities, syncManagedItems, syncProductDefaults, syncQueryBindings, undo } from './core.js';
 import { createContactCode, parseContactCode } from './contacts.js';
 import { AutomaticCloudReplica, relayBaseForLocation } from './cloud.js';
 import { chooseVaultFolder, clearActiveVault, listVaults, loadActiveState, mirrorStateToFolder, purgeVault, saveDeviceSettings, saveState, setActiveVault, validateVaultState, vaultExportSnapshot } from './storage.js';
@@ -105,6 +105,14 @@ function tagName(id) { return state?.entities[id]?.name || ''; }
 function normalizedItemName(value) { return String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/[’']/g, '').replace(/[^\p{L}\p{N}+]+/gu, ' ').trim().replace(/\s+/g, ' '); }
 function activeEntities() { return visibleEntityCache; }
 function childrenOf(id) { return childrenCache.get(id) || []; }
+function isPartyContainer(entity) { return entity.container && entity.tags.some(tagId => tagName(tagId) === 'Party'); }
+function containerConnections(entity) {
+  const connections = new Map();
+  if (entity.parentId && state?.entities[entity.parentId]?.container && isEntityVisible(state, entity.parentId)) connections.set(entity.parentId, { entity: state.entities[entity.parentId], kind: 'inside', explicit: false });
+  for (const child of childrenOf(entity.id).filter(candidate => candidate.container)) connections.set(child.id, { entity: child, kind: 'contains', explicit: false });
+  for (const id of linkedContainerIds(state, entity.id)) if (!connections.has(id)) connections.set(id, { entity: state.entities[id], kind: 'linked', explicit: true });
+  return [...connections.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name) || a.entity.id.localeCompare(b.entity.id));
+}
 function displayNumericField(entity, name, value) {
   const precision = entity.fieldMeta?.[name]?.precision;
   if (precision === undefined) return value;
@@ -474,7 +482,7 @@ function renderCompactStats(entity) {
   const basic = entity.tags.includes('Tag')
     ? [{ label: 'Metadata Tags', value: entity.tags.filter(tag => tag !== 'Tag').length, mark: icon('tag') }]
     : entity.container
-    ? [{ label: 'Things', value: childrenOf(entity.id).reduce((sum, child) => sum + child.quantity, 0), mark: icon('bag') }, { label: 'Weight', value: formatNumber(safeWeight(entity.id)), mark: icon('mass') }, { label: 'Linked Containers', value: childrenOf(entity.id).filter(child => child.container).length + (entity.parentId ? 1 : 0), mark: icon('link') }]
+    ? [{ label: 'Things', value: childrenOf(entity.id).reduce((sum, child) => sum + child.quantity, 0), mark: icon('bag') }, { label: 'Weight', value: formatNumber(safeWeight(entity.id)), mark: icon('mass') }, { label: 'Connected Containers', value: containerConnections(entity).length, mark: icon('link') }]
     : [{ label: 'Quantity', value: entity.quantity, mark: icon('bag') }, { label: 'Weight', value: formatNumber(safeWeight(entity.id)), mark: icon('mass') }, ...Object.entries(entity.fields || {}).slice(0, 1).map(([name, value]) => ({ label: name, value: displayNumericField(entity, name, value), mark: fieldIconMarkup(entity, name) }))];
   return `<span class="compact-stats">${basic.map(stat => `<span title="${escape(stat.label)}"><strong>${escape(stat.value)}</strong>${stat.mark}</span>`).join('')}</span>`;
 }
@@ -520,12 +528,13 @@ function renderContainerPanel(entity, active) {
   const tagNames = tagEntities.map(tag => tag.name);
   const restackable = restackCandidates(state, entity.id).length;
   const layout = inventoryLayouts.get(entity.id) || 'list';
-  const linked = [...new Map([...(entity.parentId && state.entities[entity.parentId] ? [state.entities[entity.parentId]] : []), ...children.filter(child => child.container)].map(candidate => [candidate.id, candidate])).values()];
+  const linked = containerConnections(entity);
+  const party = isPartyContainer(entity);
   return `<section class="panel ${active ? 'active' : ''}" data-panel-id="${entity.id}" aria-labelledby="panel-title-${entity.id}">
     <header class="panel-header"><div class="panel-title"><h2 id="panel-title-${entity.id}">${escape(entity.name)}</h2><p>${escape(tagNames.join(' · ') || 'Container')} · ×${entity.quantity}</p></div><div class="panel-actions">${entity.quantity > 1 ? `<button data-action="split-stack" data-id="${entity.id}" aria-label="Split one ${escape(entity.name)}">${icon('split')}<span class="header-label">Split one</span></button>` : ''}${restackable ? `<button data-action="restack" data-id="${entity.id}" aria-label="Restack ${restackable + 1} ${escape(entity.name)} containers">${icon('stack')}<span class="header-label">Restack ${restackable + 1}</span></button>` : ''}<button class="icon-button" data-action="edit-entity" data-id="${entity.id}" aria-label="Edit ${escape(entity.name)}">${icon('edit')}</button><button class="icon-button" data-action="close-tab" data-id="${entity.id}" aria-label="Close ${escape(entity.name)}">${icon('close')}</button></div></header>
     <div class="panel-body">
       <div class="panel-overview"><div class="hero-summary">${imageMarkup(entity)}<div class="hero-copy"><p>${escape(entity.description || 'No description yet.')}</p><div class="summary-stats"><div class="stat"><span>Things</span><strong>${children.reduce((sum, child) => sum + child.quantity, 0)}</strong></div><div class="stat"><span>Weight</span><strong>${formatNumber(safeWeight(entity.id))}</strong></div><div class="stat"><span>Containers</span><strong>${children.filter(child => child.container).length}</strong></div>${Object.entries(entity.fields || {}).map(([name, value]) => `<div class="stat"><span>${escape(name)}</span><strong>${escape(displayNumericField(entity, name, value))}</strong></div>`).join('')}</div></div></div><div class="preview-chips container-tags" aria-label="Tags">${tagEntities.map(tag => `<a class="chip" href="#search" data-action="search-tag" data-id="${tag.id}" data-value="${escape(tag.name)}">${imageMarkup(tag, 'chip-image')}<span class="chip-title">${escape(tag.name)}</span></a>`).join('')}</div></div>
-      ${linked.length ? `<section class="linked-containers" aria-label="Linked Containers"><div class="inventory-heading"><div><h3>${icon('link')} Linked Containers</h3><span class="muted">Open one, or drop an item onto it</span></div><span class="destination-key">${linked.length} ${linked.length === 1 ? 'destination' : 'destinations'}</span></div><div class="linked-container-rail">${linked.map(renderLinkedDestination).join('')}</div></section>` : ''}
+      <section class="linked-containers" aria-label="Linked Containers"><div class="inventory-heading"><div><h3>${icon('link')} Linked Containers</h3><span class="muted">${linked.length ? 'Open one, or drop an item onto it' : party ? 'Connect every Character in this Party' : 'Keep related Containers one tap away'}</span></div><div class="linked-heading-actions"><span class="destination-key">${linked.length} ${linked.length === 1 ? 'destination' : 'destinations'}</span><button data-action="manage-container-links" data-id="${entity.id}">${icon('link')} Link${party ? '<span class="link-action-detail"> Characters</span>' : ''}</button></div></div>${linked.length ? `<div class="linked-container-rail">${linked.map(connection => renderLinkedDestination(connection.entity, connection.kind)).join('')}</div>` : `<button class="linked-empty" data-action="manage-container-links" data-id="${entity.id}">${icon('plus')}<span>${party ? 'Add Characters To This Party' : 'Link A Container'}</span></button>`}</section>
       <div class="inventory-heading"><div><h3>Inventory</h3><span class="muted">${children.length} ${children.length === 1 ? 'entry' : 'entries'}</span></div><div class="view-toggle" role="group" aria-label="Inventory view"><button class="icon-button ${layout === 'list' ? 'selected' : ''}" data-action="inventory-layout" data-id="${entity.id}" data-layout="list" aria-label="List view" title="List view">${icon('list')}</button><button class="icon-button ${layout === 'grid' ? 'selected' : ''}" data-action="inventory-layout" data-id="${entity.id}" data-layout="grid" aria-label="Grid view" title="Grid view">${icon('grid')}</button></div></div>
       <div class="inventory-grid ${layout}-view" data-inventory-parent="${entity.id}">${children.map(child => layout === 'grid' ? renderDenseInventoryCard(child) : renderInventoryRow(child)).join('')}${layout === 'grid' ? `<button class="dense-item-card empty-item-card" data-action="add-item" data-parent="${entity.id}" aria-label="Add item to ${escape(entity.name)}">${icon('plus')}<span>Add</span></button>` : `<button class="inventory-row empty-item-card" data-action="add-item" data-parent="${entity.id}" aria-label="Add item to ${escape(entity.name)}">${icon('plus')}<span>Add Item</span></button>`}</div>
     </div>
@@ -547,9 +556,10 @@ function renderInventoryRow(entity) {
   </article>`;
 }
 
-function renderLinkedDestination(entity) {
+function renderLinkedDestination(entity, relationship = 'linked') {
+  const label = relationship === 'inside' ? 'Parent Container' : relationship === 'contains' ? 'Contained Container' : entity.tags.some(tagId => tagName(tagId) === 'Character') ? 'Linked Character' : 'Linked Container';
   return `<article class="inventory-row linked-destination clickable" data-action="open-entity" data-id="${entity.id}" data-drop-parent="${entity.id}" tabindex="0" role="link" aria-label="Open linked Container ${escape(entity.name)}; drop an item here to move it">
-    <span class="row-leading-icon" aria-hidden="true">${icon('link')}</span>${imageMarkup(entity, 'inventory-row-image')}<span class="inventory-row-copy"><strong>${escape(entity.name)}</strong><small>Linked Container</small></span><span class="inventory-row-stat" title="Things"><strong>${childrenOf(entity.id).reduce((sum, child) => sum + child.quantity, 0)}</strong>${icon('bag')}</span><span class="drop-cta">Drop here</span>
+    <span class="row-leading-icon" aria-hidden="true">${icon('link')}</span>${imageMarkup(entity, 'inventory-row-image')}<span class="inventory-row-copy"><strong>${escape(entity.name)}</strong><small>${escape(label)}</small></span><span class="inventory-row-stat" title="Things"><strong>${childrenOf(entity.id).reduce((sum, child) => sum + child.quantity, 0)}</strong>${icon('bag')}</span><span class="drop-cta">Drop here</span>
   </article>`;
 }
 
@@ -577,12 +587,39 @@ function renderUtilityPanel() {
   if (utility === 'dnd-tools') return renderDndTools();
   if (utility === 'character-setup') return renderCharacterSetup();
   if (utility === 'ddb-import') return renderDdbImport();
+  if (utility === 'container-links') return renderContainerLinks();
   return '';
 }
 
 function utilityHeader(title, subtitle = '') {
   const canGoBack = utilityStack.length > 0;
   return `<header class="panel-header"><div class="panel-title"><h2 id="${escape(utility)}-title">${escape(title)}</h2>${subtitle ? `<p>${escape(subtitle)}</p>` : ''}</div><div class="panel-actions"><button class="icon-button" data-action="${canGoBack ? 'utility-back' : 'close-utility'}" aria-label="${canGoBack ? 'Back' : `Close ${title}`}">${icon(canGoBack ? 'back' : 'close')}</button></div></header>`;
+}
+
+function renderContainerLinks() {
+  const container = state.entities[String(/** @type {any} */(utilityContext).containerId || '')];
+  if (!container?.container || !isEntityVisible(state, container)) return `<section class="panel active">${utilityHeader('Link Containers')}<div class="panel-body"><div class="empty-state"><strong>Container Unavailable</strong><p>Close this panel and choose another Container.</p></div></div></section>`;
+  const rawFilter = String(/** @type {any} */(utilityContext).containerLinkFilter || '');
+  const matches = rawFilter ? new Set(searchEntities(state, rawFilter).map(entity => entity.id)) : null;
+  const explicit = new Set(linkedContainerIds(state, container.id));
+  const structural = new Map();
+  if (container.parentId && state.entities[container.parentId]?.container) structural.set(container.parentId, 'inside');
+  for (const child of childrenOf(container.id).filter(entity => entity.container)) structural.set(child.id, 'contains');
+  const party = isPartyContainer(container);
+  const character = entity => entity.tags.some(tagId => tagName(tagId) === 'Character');
+  const candidates = activeEntities().filter(entity => entity.container && !entity.managed && entity.id !== container.id && (!matches || matches.has(entity.id))).sort((a, b) => {
+    const rank = entity => explicit.has(entity.id) || structural.has(entity.id) ? 0 : party && character(entity) ? 1 : 2;
+    return rank(a) - rank(b) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+  });
+  const row = entity => {
+    const relation = structural.get(entity.id);
+    const linked = explicit.has(entity.id);
+    const names = entity.tags.map(tagName).filter(name => name && !['Item','Container','Created'].includes(name)).slice(0, 3);
+    const structureStatus = relation === 'inside' ? 'Parent' : relation === 'contains' ? 'Inside Inventory' : '';
+    const status = linked ? `Linked${structureStatus ? ` · ${structureStatus}` : ''}` : structureStatus || (character(entity) ? 'Character' : 'Container');
+    return `<article class="link-candidate ${linked || relation ? 'connected' : ''}"><div class="link-candidate-copy">${imageMarkup(entity, 'inventory-row-image')}<span><strong>${escape(entity.name)}</strong><small>${escape(names.join(' · ') || status)}</small></span></div><span class="link-status">${escape(status)}</span>${linked ? `<button data-action="unlink-container" data-container="${container.id}" data-id="${entity.id}" aria-label="Unlink ${escape(entity.name)} from ${escape(container.name)}">${icon('close')} Unlink</button>` : relation ? `<button disabled aria-label="${escape(entity.name)} is connected through inventory">${escape(relation === 'inside' ? 'Parent' : 'Contained')}</button>` : `<button class="primary" data-action="link-container" data-container="${container.id}" data-id="${entity.id}" aria-label="Link ${escape(entity.name)} to ${escape(container.name)}">${icon('link')} Link</button>`}</article>`;
+  };
+  return `<section class="panel active" aria-labelledby="container-links-title">${utilityHeader('Link Containers', container.name)}<div class="panel-body link-manager"><div class="link-manager-intro"><div><strong>${party ? 'Build This Party’s Character Roster' : 'Connect Related Containers'}</strong><p>${party ? 'Characters are listed first. Links never change inventory or Weight.' : 'Links create shortcuts and drag destinations without moving inventory.'}</p></div><span class="destination-key">${explicit.size} linked</span></div><label class="tag-search">Find A Container<input type="search" data-action="container-link-filter" value="${escape(rawFilter)}" placeholder="Name, +Character, +Bag…" autocomplete="off"></label><div class="link-manager-list">${candidates.length ? candidates.map(row).join('') : `<div class="empty-state compact"><strong>No Containers Found</strong><p>${rawFilter ? 'Try another name or Tag query.' : 'Create another Container, then return here to link it.'}</p></div>`}</div></div></section>`;
 }
 
 function utilityDismissAction() {
@@ -1365,6 +1402,16 @@ app.addEventListener('input', async event => {
       if (input instanceof HTMLInputElement) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
     });
   }
+  if (target.dataset.action === 'container-link-filter') {
+    utilityContext = { ...utilityContext, containerLinkFilter: target.value };
+    const panel = target.closest('.panel');
+    const next = document.createRange().createContextualFragment(renderContainerLinks()).firstElementChild;
+    if (panel && next) panel.replaceWith(next);
+    requestAnimationFrame(() => {
+      const input = document.querySelector('[data-action="container-link-filter"]');
+      if (input instanceof HTMLInputElement) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+  }
   if (target.dataset.action === 'source-filter') {
     utilityContext = { ...utilityContext, sourceFilter: target.value };
     const panel = target.closest('.panel');
@@ -1532,6 +1579,27 @@ async function handleClick(target) {
   }
   if (action === 'remove-field') target.closest('.field-row')?.remove();
   if (action === 'add-item') openUtility('sources', { parentId: target.dataset.parent });
+  if (action === 'manage-container-links') openUtility('container-links', { containerId: target.dataset.id || '' });
+  if (action === 'link-container') {
+    const containerId = target.dataset.container || '';
+    const linkedId = target.dataset.id || '';
+    const prepared = prepareContainerLink(state, containerId, linkedId);
+    if (!prepared.ok) { announce(prepared.reason); return; }
+    const container = state.entities[containerId];
+    const linked = state.entities[linkedId];
+    commit(state, `Link ${container.name} and ${linked.name}`, prepared.writes);
+    await persist(`${linked.name} linked to ${container.name}. Both Containers now show the connection.`); renderShell();
+  }
+  if (action === 'unlink-container') {
+    const containerId = target.dataset.container || '';
+    const linkedId = target.dataset.id || '';
+    const prepared = prepareContainerUnlink(state, containerId, linkedId);
+    if (!prepared.ok) { announce(prepared.reason); return; }
+    const container = state.entities[containerId];
+    const linked = state.entities[linkedId];
+    commit(state, `Unlink ${container.name} and ${linked.name}`, prepared.writes);
+    await persist(`${linked.name} unlinked from ${container.name}. Inventory was not moved.`); renderShell();
+  }
   if (action === 'edit-source') openUtility('source-editor', { sourceId: target.dataset.id, parentId: /** @type {any} */(utilityContext).parentId || '' });
   if (action === 'sources-back') utilityBack();
   if (action === 'choose-source') {

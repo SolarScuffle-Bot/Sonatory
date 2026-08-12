@@ -30,6 +30,22 @@ test('list items, linked destinations, and add slot share compact inventory geom
   assert.match(app, /class="inventory-row-description"/);
 });
 
+test('every Container exposes a searchable symmetric link manager and Parties prioritize Characters', () => {
+  const panelRenderer = app.slice(app.indexOf('function renderContainerPanel'), app.indexOf('function quantityControls'));
+  const manager = app.slice(app.indexOf('function renderContainerLinks'), app.indexOf('function utilityDismissAction'));
+  assert.match(panelRenderer, /data-action="manage-container-links"/);
+  assert.match(panelRenderer, /link-action-detail/);
+  assert.match(panelRenderer, /linked-empty/);
+  assert.doesNotMatch(panelRenderer, /linked\.length \? `<section class="linked-containers"/);
+  assert.match(manager, /data-action="container-link-filter"/);
+  assert.match(manager, /\+Character/);
+  assert.match(manager, /data-action="link-container"/);
+  assert.match(manager, /data-action="unlink-container"/);
+  assert.match(app, /prepareContainerLink\(state, containerId, linkedId\)/);
+  assert.match(app, /prepareContainerUnlink\(state, containerId, linkedId\)/);
+  assert.match(css, /\.link-candidate\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto auto/s);
+});
+
 test('Item and Tags are persistent adjacent independent header actions', () => {
   const headerGroup = app.match(/<span class="header-create-group"[\s\S]*?<\/span>\s*<span class="header-spacer">/u)?.[0] || '';
   assert.match(headerGroup, /data-action="create-root"/);

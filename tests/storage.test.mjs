@@ -34,6 +34,28 @@ test('Vault validation accepts unique friend contacts and rejects malformed or d
   assert.throws(() => validateVaultState(malformed), /malformed friend contacts/);
 });
 
+test('Vault validation migrates, persists, and constrains canonical Container links', () => {
+  const legacy = createState('Legacy Links', 'User');
+  delete legacy.containerLinks;
+  assert.doesNotThrow(() => validateVaultState(legacy));
+  assert.deepEqual(legacy.containerLinks, []);
+
+  const state = createState('Links', 'User');
+  const now = new Date().toISOString();
+  const ids = [guid(), guid()].sort();
+  for (const [index, id] of ids.entries()) state.entities[id] = { id, name: `Container ${index + 1}`, description: '', tags: [], parentId: null, container: true, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now };
+  commit(state, 'Link Containers', [{ path: '/containerLinks', value: [{ a: ids[0], b: ids[1] }] }]);
+  assert.doesNotThrow(() => validateVaultState(state));
+
+  const duplicate = structuredClone(state);
+  duplicate.containerLinks.push(structuredClone(duplicate.containerLinks[0]));
+  assert.throws(() => validateVaultState(duplicate), /duplicate Container links/);
+  const missing = structuredClone(state);
+  missing.containerLinks[0].b = guid();
+  if (missing.containerLinks[0].a.localeCompare(missing.containerLinks[0].b) > 0) [missing.containerLinks[0].a, missing.containerLinks[0].b] = [missing.containerLinks[0].b, missing.containerLinks[0].a];
+  assert.throws(() => validateVaultState(missing), /invalid endpoint/);
+});
+
 test('Vault validation rejects duplicate, ownerless, and unknown-role Group policy data', () => {
   const base = createState('Groups', 'User');
   const owner = { vaultGuid: base.vault.id, name: base.vault.name, role: 'Owner' };

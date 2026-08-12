@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDecimal, canMove, commit, compareDecimal, computeAllWeights, computeWeight, decimalToString, formatExactDecimal, guid, managedBaseEntity, parseDecimal, parseQuery, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, searchEntities, structuralFingerprint, syncManagedItems, syncProductDefaults, undo } from '../src/core.js';
+import { addDecimal, canMove, commit, compareDecimal, computeAllWeights, computeWeight, decimalToString, formatExactDecimal, guid, linkedContainerIds, managedBaseEntity, parseDecimal, parseQuery, prepareContainerLink, prepareContainerUnlink, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, searchEntities, structuralFingerprint, syncManagedItems, syncProductDefaults, undo } from '../src/core.js';
+import { BUILTIN_COMPONENTS, projectStateToEcs } from '../src/ecs-projection.js';
 import { createExampleState as createState } from './helpers.mjs';
 
 test('exact decimals normalize and add without floating point error', () => {
@@ -100,6 +101,37 @@ test('inventory moves deterministically reorder, transfer, reject cycles, and un
   const recursive = prepareInventoryMove(state, aria.id, satchel.id);
   assert.equal(recursive.ok, false);
   if (!recursive.ok) assert.match(recursive.reason, /inside itself|cannot contain itself/i);
+});
+
+test('Container links are symmetric ECS relationships without containment or Weight side effects', () => {
+  const state = createState('Links', 'Tester');
+  const party = Object.values(state.entities).find(entity => entity.name === 'The Wayfarers');
+  const character = Object.values(state.entities).find(entity => entity.name === 'Aria Thorn');
+  assert.ok(party?.container && character?.container);
+  const originalParent = character.parentId;
+  const originalWeight = decimalToString(computeWeight(state, party.id));
+
+  const prepared = prepareContainerLink(state, party.id, character.id);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  commit(state, 'Link roster member', prepared.writes);
+  assert.deepEqual(linkedContainerIds(state, party.id), [character.id]);
+  assert.deepEqual(linkedContainerIds(state, character.id), [party.id]);
+  assert.equal(character.parentId, originalParent);
+  assert.equal(decimalToString(computeWeight(state, party.id)), originalWeight);
+  const world = projectStateToEcs(state);
+  assert.equal(world.hasPair(party.id, BUILTIN_COMPONENTS.linkedTo, character.id), true);
+  assert.equal(world.hasPair(character.id, BUILTIN_COMPONENTS.linkedTo, party.id), true);
+  assert.equal(prepareContainerLink(state, party.id, character.id).ok, false);
+  assert.equal(prepareContainerLink(state, party.id, party.id).ok, false);
+
+  const removal = prepareContainerUnlink(state, character.id, party.id);
+  assert.equal(removal.ok, true);
+  if (!removal.ok) return;
+  commit(state, 'Unlink roster member', removal.writes);
+  assert.deepEqual(linkedContainerIds(state, party.id), []);
+  undo(state);
+  assert.deepEqual(linkedContainerIds(state, party.id), [character.id]);
 });
 
 test('search operators are direct and quoted values remain intact', () => {

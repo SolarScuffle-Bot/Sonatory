@@ -6,13 +6,23 @@ import { canonicalJson, sha256 } from '../relay/core.js';
 import { cloudGenesis } from '../src/cloud.js';
 import { createState } from '../src/core.js';
 
-test('automatic cloud genesis excludes managed definitions while retaining empty Vault structure', () => {
+test('automatic cloud genesis excludes managed definitions while retaining local structure and links', () => {
   const state = createState('Fresh Cloud Vault', 'Cloud User');
+  const now = new Date().toISOString();
+  const firstId = '00000000-0000-4000-8000-000000000911';
+  const secondId = '00000000-0000-4000-8000-000000000912';
+  state.entities[firstId] = { id: firstId, name: 'Local Party', description: '', tags: [], parentId: null, container: true, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now };
+  state.entities[secondId] = { id: secondId, name: 'Local Character', description: '', tags: [], parentId: null, container: true, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now };
+  const managedContainer = Object.values(state.entities).find(entity => entity.managed && entity.container);
+  assert.ok(managedContainer);
+  const managedLink = [firstId, managedContainer.id].sort();
+  state.containerLinks = [{ a: firstId, b: secondId }, { a: managedLink[0], b: managedLink[1] }];
   const genesis = cloudGenesis(state);
   assert.equal(Object.values(genesis.entities).some(entity => entity.managed), false);
-  assert.equal(Object.values(genesis.entities).some(entity => !entity.tags.includes('Tag')), false);
+  assert.deepEqual(Object.values(genesis.entities).filter(entity => !entity.tags.includes('Tag')).map(entity => entity.id).sort(), [firstId, secondId]);
   assert.deepEqual(genesis.collections.map(collection => collection.name), ['Characters', 'Parties', 'Bags']);
   assert.deepEqual(genesis.cloud, { enabled: true, status: 'Automatic' });
+  assert.deepEqual(genesis.containerLinks, [{ a: firstId, b: secondId }]);
 });
 
 test('browser sync client encrypts, signs, pushes, verifies, pulls, and decrypts through HTTP relay', async () => {

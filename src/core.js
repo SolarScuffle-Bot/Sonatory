@@ -5,6 +5,7 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 /** @typedef {{coefficient: bigint, scale: number}} Decimal */
 /** @typedef {{precision?:number,min?:string,max?:string,icon?:string,iconImage?:string}} NumericFieldMeta */
 /** @typedef {{id:string,name:string,description:string,tags:string[],parentId:string|null,container:boolean,quantity:number,weight:string,image:string|null,order?:number,createdAt:string,updatedAt:string,deleted?:boolean,managed?:boolean|{sourceId:string,version:string,key:string,override?:boolean,detached?:boolean},fields?:Record<string,string>,fieldMeta?:Record<string,NumericFieldMeta>,aliases?:string[],importKey?:string,importState?:{adapter:string,profileVersion:string,items:Array<{key:string,name:string,quantity:number,weight:string,entityId:string}>}}} Entity */
+/** @typedef {{a:string,b:string}} ContainerLink */
 /** @typedef {{operator:'include'|'exclude'|'containers',entityId:string,displayName:string}} QueryBinding */
 /** @typedef {'custom'|'item'|'container'|'character'|'tag'|'sources'} CollectionCreateAction */
 /** @typedef {{id:string,name:string,query:string,queryBindings?:QueryBinding[],description:string,createAction?:CollectionCreateAction}} Collection */
@@ -12,7 +13,7 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 /** @typedef {{path:string,before:unknown,after:unknown}} Change */
 /** @typedef {{id:string,label:string,at:string,kind:'action'|'undo'|'redo',changes:Change[],relatedTo?:string}} HistoryEvent */
 /** @typedef {{events:HistoryEvent[],undoStack:string[],redoStack:string[],branches:Array<{id:string,createdAt:string,eventIds:string[]}>}} History */
-/** @typedef {{version:number,sourceDefaultsVersion?:number,vault:{id:string,name:string,title:string,image:string|null,createdAt:string,folderName?:string},settings:{density:'compact'|'normal'|'spacious',mode:'system'|'light'|'dark',theme:string,accent:string,hue:number,motion:'system'|'reduced'|'full'},entities:Record<string,Entity>,collections:Collection[],itemSources:ItemSource[],history:History,recentTabs:string[],groups:unknown[],friends:Array<{vaultGuid:string,name:string}>,cloud:{enabled:boolean,status:string}}} AppState */
+/** @typedef {{version:number,sourceDefaultsVersion?:number,vault:{id:string,name:string,title:string,image:string|null,createdAt:string,folderName?:string},settings:{density:'compact'|'normal'|'spacious',mode:'system'|'light'|'dark',theme:string,accent:string,hue:number,motion:'system'|'reduced'|'full'},entities:Record<string,Entity>,containerLinks:ContainerLink[],collections:Collection[],itemSources:ItemSource[],history:History,recentTabs:string[],groups:unknown[],friends:Array<{vaultGuid:string,name:string}>,cloud:{enabled:boolean,status:string}}} AppState */
 
 export const SCHEMA_VERSION = 1;
 export const MANAGED_ITEM_COUNT = SRD_ITEMS.length;
@@ -32,6 +33,7 @@ export function createDefaultItemSources() {
 
 /** Adds general shipped definitions once, without recreating user-deleted tiles. @param {AppState} state */
 export function syncProductDefaults(state) {
+  if (!Array.isArray(state.containerLinks)) state.containerLinks = [];
   const now = new Date().toISOString();
   const tagsByName = new Map(Object.values(state.entities).filter(entity => entity.tags.includes('Tag')).map(entity => [entity.name.toLocaleLowerCase(), entity]));
   const ensureTag = (name, description) => {
@@ -458,6 +460,39 @@ export function canMove(state, childId, parentId) {
   return { ok: true };
 }
 
+/** @param {string} firstId @param {string} secondId @returns {ContainerLink} */
+function canonicalContainerLink(firstId, secondId) {
+  return firstId.localeCompare(secondId) < 0 ? { a: firstId, b: secondId } : { a: secondId, b: firstId };
+}
+
+/** Returns explicit, non-containment links in deterministic order. @param {AppState} state @param {string} containerId */
+export function linkedContainerIds(state, containerId) {
+  return (state.containerLinks || [])
+    .flatMap(link => link.a === containerId ? [link.b] : link.b === containerId ? [link.a] : [])
+    .filter((id, index, ids) => ids.indexOf(id) === index && state.entities[id]?.container && isEntityVisible(state, id))
+    .sort((a, b) => (state.entities[a]?.name || '').localeCompare(state.entities[b]?.name || '') || a.localeCompare(b));
+}
+
+/** @param {AppState} state @param {string} firstId @param {string} secondId */
+export function prepareContainerLink(state, firstId, secondId) {
+  const first = state.entities[firstId];
+  const second = state.entities[secondId];
+  if (!first?.container || !second?.container || !isEntityVisible(state, firstId) || !isEntityVisible(state, secondId)) return { ok: false, reason: 'Choose two available Containers.' };
+  if (firstId === secondId) return { ok: false, reason: 'A Container cannot link to itself.' };
+  if (first.parentId === secondId || second.parentId === firstId) return { ok: false, reason: 'Those Containers are already connected through inventory.' };
+  const link = canonicalContainerLink(firstId, secondId);
+  if ((state.containerLinks || []).some(existing => existing.a === link.a && existing.b === link.b)) return { ok: false, reason: 'Those Containers are already linked.' };
+  return { ok: true, writes: [{ path: '/containerLinks', value: [...(state.containerLinks || []), link].sort((a, b) => `${a.a}:${a.b}`.localeCompare(`${b.a}:${b.b}`)) }] };
+}
+
+/** @param {AppState} state @param {string} firstId @param {string} secondId */
+export function prepareContainerUnlink(state, firstId, secondId) {
+  const link = canonicalContainerLink(firstId, secondId);
+  const next = (state.containerLinks || []).filter(existing => existing.a !== link.a || existing.b !== link.b);
+  if (next.length === (state.containerLinks || []).length) return { ok: false, reason: 'Those Containers are not explicitly linked.' };
+  return { ok: true, writes: [{ path: '/containerLinks', value: next }] };
+}
+
 /**
  * Build one atomic, undoable inventory move. The visible order and the stored
  * order use the same comparison so rendering never disagrees with a drop.
@@ -650,7 +685,7 @@ export const SEARCH_OPERATORS = Object.freeze([
 
 const GUID_PATH = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const ENTITY_MUTATION_PATH = new RegExp(`^/entities/${GUID_PATH}$`, 'i');
-const ROOT_MUTATION_PATHS = new Set(['/settings', '/collections', '/itemSources', '/groups', '/friends', '/vault/name', '/vault/title', '/vault/image']);
+const ROOT_MUTATION_PATHS = new Set(['/settings', '/collections', '/itemSources', '/groups', '/friends', '/containerLinks', '/vault/name', '/vault/title', '/vault/image']);
 
 /** Imported history may only address the same coarse state boundaries used by commands. @param {unknown} path */
 export function isSafeMutationPath(path) {
@@ -824,7 +859,7 @@ export function createState(vaultName, displayName, preferences = {}) {
     vault: { id: guid(), name: displayName || 'Local user', title: vaultName || `${displayName || 'My'} Vault`, image: null, createdAt: now },
     settings: { density: 'normal', mode: 'system', theme: 'modern', accent: 'custom', hue: 33, motion: 'system', ...preferences },
     sourceDefaultsVersion: SOURCE_DEFAULTS_VERSION,
-    entities: {}, collections: [], itemSources: createDefaultItemSources(), history: { events: [], undoStack: [], redoStack: [], branches: [] }, recentTabs: [], groups: [], friends: [], cloud: { enabled: true, status: 'Automatic' }
+    entities: {}, containerLinks: [], collections: [], itemSources: createDefaultItemSources(), history: { events: [], undoStack: [], redoStack: [], branches: [] }, recentTabs: [], groups: [], friends: [], cloud: { enabled: true, status: 'Automatic' }
   };
   const makeTag = (name, description) => {
     const id = guid();

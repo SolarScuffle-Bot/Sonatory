@@ -116,6 +116,12 @@ function validateFriends(value) {
   if (!Array.isArray(value) || value.length > 10_000 || !value.every(friend => isRecord(friend) && typeof friend.vaultGuid === 'string' && GUID_PATTERN.test(friend.vaultGuid) && isBoundedString(friend.name, 200) && friend.name.trim()) || new Set(value.map(friend => friend.vaultGuid)).size !== value.length) throw new Error('The Vault contains malformed friend contacts.');
 }
 
+/** @param {unknown} value */
+function validateContainerLinks(value) {
+  if (!Array.isArray(value) || value.length > 250_000 || !value.every(link => isRecord(link) && Object.keys(link).length === 2 && typeof link.a === 'string' && typeof link.b === 'string' && GUID_PATTERN.test(link.a) && GUID_PATTERN.test(link.b) && link.a.localeCompare(link.b) < 0)) throw new Error('The Vault contains malformed Container links.');
+  if (new Set(value.map(link => `${link.a}:${link.b}`)).size !== value.length) throw new Error('The Vault contains duplicate Container links.');
+}
+
 /** @param {string} path @param {unknown} value */
 function validateHistoryValue(path, value) {
   if (value === undefined) return;
@@ -125,6 +131,7 @@ function validateHistoryValue(path, value) {
   if (path === '/itemSources') { validateItemSources(value); return; }
   if (path === '/groups') { validateGroups(value); return; }
   if (path === '/friends') { validateFriends(value); return; }
+  if (path === '/containerLinks') { validateContainerLinks(value); return; }
   if (path === '/vault/image') { if (!isPrivateImage(value)) throw new Error('The Vault history contains an unsafe image.'); return; }
   if ((path === '/vault/name' || path === '/vault/title') && (!isBoundedString(value, 200) || !String(value).trim())) throw new Error('The Vault history contains invalid profile text.');
 }
@@ -262,16 +269,23 @@ export function validateVaultState(value) {
   if (entries.length > 250_000) throw new Error('The Vault contains more entities than this build can safely open.');
   if (!Array.isArray(state.itemSources)) state.itemSources = defaultItemSources();
   if (!Array.isArray(state.friends)) state.friends = [];
+  if (!Array.isArray(state.containerLinks)) state.containerLinks = [];
   validateCollections(state.collections);
   validateItemSources(state.itemSources);
   validateGroups(state.groups);
   validateFriends(state.friends);
+  validateContainerLinks(state.containerLinks);
   if (!isRecord(state.history) || !Array.isArray(state.history.events) || !Array.isArray(state.history.undoStack) || !Array.isArray(state.history.redoStack) || !Array.isArray(state.history.branches) || !Array.isArray(state.recentTabs) || !isRecord(state.cloud) || typeof state.cloud.enabled !== 'boolean' || !isBoundedString(state.cloud.status, 200)) throw new Error('The Vault is incomplete or malformed.');
   for (const [id, entity] of entries) validateEntity(entity, id);
   for (const [, entityValue] of entries) {
     const entity = /** @type {Record<string, any>} */(entityValue);
     if (entity.parentId !== null && (!state.entities[entity.parentId] || !state.entities[entity.parentId].container)) throw new Error('The Vault contains an invalid parent relationship.');
     for (const tagId of entity.tags) if (tagId !== 'Tag' && (!state.entities[tagId] || !state.entities[tagId].tags.includes('Tag'))) throw new Error('The Vault contains an invalid Tag reference.');
+  }
+  for (const link of state.containerLinks) {
+    const first = state.entities[link.a];
+    const second = state.entities[link.b];
+    if (!first?.container || !second?.container) throw new Error('The Vault contains a Container link with an invalid endpoint.');
   }
   for (const subject of [...state.collections, ...state.itemSources]) for (const binding of subject.queryBindings || []) {
     const entity = state.entities[binding.entityId];

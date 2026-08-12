@@ -4,7 +4,8 @@ import { EcsWorld } from './ecs.js';
 export const BUILTIN_COMPONENTS = Object.freeze({
   tag: '10000000-0000-4000-8000-000000000001',
   container: '10000000-0000-4000-8000-000000000002',
-  containedBy: '10000000-0000-4000-8000-000000000003'
+  containedBy: '10000000-0000-4000-8000-000000000003',
+  linkedTo: '10000000-0000-4000-8000-000000000004'
 });
 
 /**
@@ -29,6 +30,13 @@ export function projectStateToEcs(state) {
     if (entity.container) world.add(entity.id, BUILTIN_COMPONENTS.container);
     for (const tagId of entity.tags) if (tagId !== 'Tag' && state.entities[tagId] && !state.entities[tagId].deleted && state.entities[tagId].tags.includes('Tag')) world.add(entity.id, tagId);
     if (entity.parentId && world.byGuid(entity.parentId)) world.addPair(entity.id, BUILTIN_COMPONENTS.containedBy, entity.parentId, { exclusive: true });
+  }
+  for (const link of state.containerLinks || []) {
+    const first = state.entities[link.a];
+    const second = state.entities[link.b];
+    if (!first?.container || !second?.container || first.deleted || second.deleted) continue;
+    world.addPair(link.a, BUILTIN_COMPONENTS.linkedTo, link.b);
+    world.addPair(link.b, BUILTIN_COMPONENTS.linkedTo, link.a);
   }
   return world;
 }

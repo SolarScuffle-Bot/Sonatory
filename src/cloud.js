@@ -20,6 +20,7 @@ export function cloudGenesis(state) {
   const retainedIds = new Set(Object.keys(retained));
   for (const entity of Object.values(retained)) entity.tags = entity.tags.filter(tag => tag === 'Tag' || retainedIds.has(tag));
   snapshot.entities = retained;
+  snapshot.containerLinks = snapshot.containerLinks.filter(link => retainedIds.has(link.a) && retainedIds.has(link.b));
   snapshot.history = { events: [], undoStack: [], redoStack: [], branches: [] };
   snapshot.recentTabs = [];
   snapshot.cloud = { enabled: true, status: 'Automatic' };
