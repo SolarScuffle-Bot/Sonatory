@@ -8,6 +8,6 @@
     "build": "node scripts/build-site.mjs",
     "test": "node --test",
     "verify:dist": "node scripts/verify-dist.mjs",
-    "check": "node --check src/core.js && node --check src/ecs.js && node --check src/ecs-projection.js && node --check src/contacts.js && node --check src/storage.js && node --check src/app.js && node --check src/sync.js && node --check src/importers/ddb-parser.js && node --check src/importers/ddb-worker.js && node --check relay/core.js && node --check relay/worker.js && node --check server.mjs && node --check sw.js && node --test"
+    "check": "node --check src/core.js && node --check src/cloud.js && node --check src/ecs.js && node --check src/ecs-projection.js && node --check src/contacts.js && node --check src/storage.js && node --check src/app.js && node --check src/sync.js && node --check src/importers/ddb-parser.js && node --check src/importers/ddb-worker.js && node --check relay/core.js && node --check relay/worker.js && node --check server.mjs && node --check sw.js && node --test"
   }
 }

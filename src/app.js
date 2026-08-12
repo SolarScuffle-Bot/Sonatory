@@ -1,7 +1,8 @@
 // @ts-check
 import { canMove, commit, compareDecimal, computeAllWeights, computeWeight, createState, decimalToString, formatExactDecimal, guid, isEntityVisible, managedBaseEntity, MANAGED_ITEM_COUNT, MANAGED_SOURCE_VERSION, parseDecimal, parseQuery, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, SEARCH_OPERATORS, searchEntities, syncManagedItems, syncProductDefaults, syncQueryBindings, undo } from './core.js';
 import { createContactCode, parseContactCode } from './contacts.js';
-import { chooseVaultFolder, clearActiveVault, listVaults, loadActiveState, mirrorStateToFolder, saveDeviceSettings, saveState, setActiveVault, validateVaultState, vaultExportSnapshot } from './storage.js';
+import { AutomaticCloudReplica, relayBaseForLocation } from './cloud.js';
+import { chooseVaultFolder, clearActiveVault, listVaults, loadActiveState, mirrorStateToFolder, purgeVault, saveDeviceSettings, saveState, setActiveVault, validateVaultState, vaultExportSnapshot } from './storage.js';
 
 const app = /** @type {HTMLElement} */ (document.querySelector('#app'));
 const live = /** @type {HTMLElement} */ (document.querySelector('#live'));
@@ -13,7 +14,7 @@ let utility = '';
 let utilityContext = {};
 /** @type {Array<{name:string,context:Record<string,unknown>}>} */
 let utilityStack = [];
-const POPUP_ROOTS = new Set(['search','groups','activity','settings','profile','menu','sync-setup']);
+const POPUP_ROOTS = new Set(['search','groups','activity','settings','profile','menu']);
 let collectionsLayout = 'carousel';
 /** @type {Map<string,'grid'|'list'>} */
 const inventoryLayouts = new Map();
@@ -35,6 +36,10 @@ let importWorker = null;
 let saveInFlight = Promise.resolve();
 let persistenceDepth = 0;
 let storageWarning = '';
+let cloudStatus = 'Automatic';
+/** @type {AutomaticCloudReplica|null} */
+let cloudReplica = null;
+let cloudQueue = Promise.resolve();
 /** @type {ServiceWorker|null} */
 let pendingAppUpdate = null;
 let updateRequested = false;
@@ -70,6 +75,7 @@ const icons = {
   more: '<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>',
   edit: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m4 16-.8 4.8L8 20 20 8l-4-4zM14.5 5.5l4 4"/></svg>',
   bag: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 8h14l1 13H4zM8 8V6a4 4 0 0 1 8 0v2"/></svg>',
+  folder: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></svg>',
   tools: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m14.5 6.5 3-3a4.2 4.2 0 0 1-5.4 5.4L5.5 15.5a2.1 2.1 0 1 0 3 3l6.6-6.6a4.2 4.2 0 0 1 5.4-5.4l-3 3"/><path d="m4 4 5 5M3 3l3.5 1L5 6.5Z"/></svg>',
   activity: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 12h4l2-7 4 14 2-7h4"/></svg>',
   tag: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5v6l9 9 7-7-9-9H5a1 1 0 0 0-1 1Z"/><circle cx="8" cy="8" r="1"/></svg>',
@@ -141,10 +147,48 @@ async function persist(message = '') {
   persistenceDepth += 1;
   try {
     await saveInFlight;
+    queueAutomaticCloudSync();
     if (message) announce(message);
   } catch (error) {
     showNotice(`Not saved locally: ${error instanceof Error ? error.message : 'Local storage failed.'}`, true);
   } finally { persistenceDepth -= 1; maybeActivateUpdate(); }
+}
+
+function activeCloudReplica() {
+  if (!state) return null;
+  if (!cloudReplica || cloudReplica.state.vault.id !== state.vault.id) cloudReplica = new AutomaticCloudReplica(state, relayBaseForLocation(location));
+  else cloudReplica.state = state;
+  return cloudReplica;
+}
+
+function refreshCloudIndicator() {
+  const button = document.querySelector('.profile-button');
+  if (!(button instanceof HTMLButtonElement)) return;
+  const label = `Profile & Vault · ${backingStatus()}`;
+  button.dataset.cloudStatus = cloudStatus.toLowerCase();
+  button.setAttribute('aria-label', label);
+  button.title = label;
+}
+
+function queueAutomaticCloudSync() {
+  if (!state) return;
+  const vaultId = state.vault.id;
+  cloudStatus = 'Syncing';
+  refreshCloudIndicator();
+  cloudQueue = cloudQueue.catch(() => {}).then(async () => {
+    const replica = activeCloudReplica();
+    if (!replica || !state || state.vault.id !== vaultId) return;
+    const changed = await replica.sync();
+    if (!state || state.vault.id !== vaultId) return;
+    cloudStatus = 'Saved';
+    refreshCloudIndicator();
+    if (changed) { await saveState(state); renderShell(); announce('Encrypted changes from another device were applied.'); }
+  }).catch((error) => {
+    if (state?.vault.id !== vaultId) return;
+    console.error('Automatic encrypted storage failed.', error);
+    cloudStatus = 'Offline';
+    refreshCloudIndicator();
+  });
 }
 
 function showNotice(message, important = false) {
@@ -222,8 +266,7 @@ function popupLayerOpen() {
 
 function backingStatus() {
   if (!state) return '';
-  if (state.cloud.enabled) return state.cloud.status;
-  return state.vault.folderName ? `Folder · ${state.vault.folderName}` : 'On this device';
+  return state.vault.folderName ? `${cloudStatus} + ${state.vault.folderName}` : cloudStatus;
 }
 
 /** @param {File} file */
@@ -277,6 +320,7 @@ async function copyText(value, message) {
 
 async function applyFolderSelection(result, deviceSettings) {
   state = result.state;
+  cloudReplica = null; cloudStatus = 'Automatic';
   state.settings = deviceSettings;
   await saveState(state);
   storageWarning = '';
@@ -297,18 +341,11 @@ async function renderOnboarding() {
           <span class="eyebrow">Create a Vault</span>
           <h1 id="welcome-title">One setup, then you’re in.</h1>
           <p class="muted">A Vault is both your workspace and your identity. The defaults below are ready to use.</p>
-          ${vaults.length ? `<div class="notice"><div><strong>Recent Vaults</strong><p class="muted">Choose one to continue as that identity.</p></div>${vaults.map(vault => `<button type="button" data-action="open-vault" data-id="${vault.id}">${escape(vault.name)}</button>`).join('')}</div>` : ''}
+          ${vaults.length ? `<section class="recent-vaults" aria-labelledby="recent-vaults-title"><div class="recent-vaults-copy"><strong id="recent-vaults-title">Recent Vaults</strong><p>Choose one to continue as that identity.</p></div><div class="recent-vault-list">${vaults.map(vault => `<button type="button" data-action="open-vault" data-id="${vault.id}">${escape(vault.name)}</button>`).join('')}</div></section>` : ''}
           <div class="form-grid">
             <div class="onboarding-identity-row full">${imagePicker('image', null, 'Add profile image')}<label>Display name<input name="displayName" autocomplete="name" maxlength="80" required placeholder="Yohan the Great"></label><label>Vault name<input name="vaultName" maxlength="80" placeholder="My adventures"></label></div>
           </div>
-          <fieldset class="settings-group">
-            <legend>Backing</legend>
-            <div class="choice-cards">
-              <label class="choice"><input type="radio" name="backing" value="browser" checked><strong>This device</strong><span>Fast and private. Export a backup when ready.</span></label>
-              <label class="choice"><input type="radio" name="backing" value="folder" ${folderSupported ? '' : 'disabled'}><strong>Vault folder</strong><span>${folderSupported ? 'Portable bearer copy, kept current after you grant access.' : 'Use Export Vault in browsers without folder access.'}</span></label>
-              <label class="choice"><input type="radio" name="backing" value="cloud"><strong>Encrypted cloud</strong><span>Create locally, then connect encrypted sync.</span></label>
-            </div>
-          </fieldset>
+          <label class="folder-backup-choice"><input type="checkbox" name="folderBackup" value="folder" ${folderSupported ? '' : 'disabled'}><span>${icon('folder')}<span><strong>Add a Vault folder backup</strong><small>${folderSupported ? 'Optional. Keep a portable copy in a folder you choose.' : 'Folder access is unavailable here; you can export a backup after creating the Vault.'}</small></span></span></label>
           <fieldset class="settings-group">
             <legend>Accessibility density</legend>
             <div class="segmented" role="group" aria-label="Accessibility density">
@@ -317,7 +354,6 @@ async function renderOnboarding() {
               <label class="choice"><input type="radio" name="density" value="spacious"><strong>Spacious</strong></label>
             </div>
           </fieldset>
-          <p class="muted"><strong>Important:</strong> anyone with a complete future Vault folder can act as this identity. No email or account is required.</p>
           <div class="form-actions"><button class="primary" type="submit">Create Vault</button></div>
         </form>
       </section>
@@ -341,7 +377,7 @@ function renderShell() {
       <button class="ghost header-optional" data-action="groups" title="Groups & Friends">${icon('users')}<span class="header-label">Groups</span></button>
       <button class="ghost header-optional" data-action="activity" title="Activity">${icon('activity')}<span class="header-label">Activity</span></button>
       <button class="ghost header-optional" data-action="settings" title="Settings">${icon('settings')}<span class="header-label">Settings</span></button>
-      <button class="avatar profile-button header-optional" data-action="profile" aria-label="Profile & Vault · ${escape(backingStatus())}" title="${escape(backingStatus())}">${avatarMarkup()}<span class="status-dot" aria-hidden="true"></span></button>
+      <button class="avatar profile-button header-optional" data-cloud-status="${cloudStatus.toLowerCase()}" data-action="profile" aria-label="Profile & Vault · ${escape(backingStatus())}" title="${escape(backingStatus())}">${avatarMarkup()}<span class="status-dot" aria-hidden="true"></span></button>
       <button class="icon-button mobile-more" data-action="mobile-menu" aria-label="More navigation">${icon('more')}</button>
     </header>
     <nav class="recent-tabs" aria-label="Recent containers">
@@ -480,7 +516,6 @@ function renderUtilityPanel() {
   if (utility === 'activity') return renderActivity();
   if (utility === 'profile') return renderProfile();
   if (utility === 'tags') return renderTagManager();
-  if (utility === 'sync-setup') return renderSyncSetup();
   if (utility === 'menu') return renderMobileMenu();
   if (utility === 'editor') return renderEditor();
   if (utility === 'group-editor') return renderGroupEditor();
@@ -515,7 +550,6 @@ function renderSettings() {
       ${(state.settings.accent || 'custom') === 'custom' ? `<label class="hue-control"><span>Custom Accent Hue (<output>${state.settings.hue}°</output>)</span><input name="hue" type="range" min="0" max="359" value="${state.settings.hue}" data-action="preview-hue"></label>` : `<input type="hidden" name="hue" value="${state.settings.hue}">`}
       <label>Motion<select name="motion"><option value="system" ${state.settings.motion === 'system' ? 'selected' : ''}>Follow system</option><option value="reduced" ${state.settings.motion === 'reduced' ? 'selected' : ''}>Reduced</option><option value="full" ${state.settings.motion === 'full' ? 'selected' : ''}>Full</option></select></label>
       <p class="muted">Appearance stays on this device and never changes content, order, permissions, or target sizes.</p>
-      <button type="button" data-action="sync-setup">${icon('cloud')} Advanced Sync</button>
       <div class="form-actions"><button type="button" data-action="reset-settings">Reset</button><button class="primary" type="submit">Apply</button></div>
     </form></section>`;
 }
@@ -525,10 +559,6 @@ function renderTagManager() {
   const filter = rawFilter.trim().toLocaleLowerCase();
   const tags = searchEntities(state, '+Tag').filter(entity => entity.tags.includes('Tag')).filter(entity => !filter || `${entity.name} ${entity.description}`.toLocaleLowerCase().includes(filter));
   return `<section class="panel active" aria-labelledby="tags-title">${utilityHeader('Tags', `${tags.length} available`)}<div class="panel-body"><div class="locked-query"><code class="query-token include">+Tag</code><span>Only Tags appear here</span></div><div class="inventory-heading"><label class="tag-search">Find a Tag<input type="search" data-action="tag-filter" value="${escape(rawFilter)}" placeholder="Name or description"></label><button data-action="custom-tag">${icon('plus')} Tag</button></div><div class="tag-manager-grid">${tags.map(tag => `<button class="tag-manager-card" data-action="edit-entity" data-id="${tag.id}">${imageMarkup(tag, 'chip-image')}<span><strong>${escape(tag.name)}</strong><small>${escape(tag.description || 'No description')}</small></span>${icon('edit')}</button>`).join('')}<button class="tag-manager-card ghost-card" data-action="custom-tag">${icon('plus')}<span><strong>Add Tag</strong><small>Create a reusable label</small></span></button></div></div></section>`;
-}
-
-function renderSyncSetup() {
-  return `<section class="panel active" aria-labelledby="sync-setup-title">${utilityHeader('Advanced Sync', 'Power-user relay configuration')}<div class="panel-body"><div class="import-guard"><strong>${icon('cloud')} Local work remains available</strong><span>Relay setup never uploads plaintext and never blocks this Vault.</span></div><h3>Cloudflare or custom relay</h3><p>Sonatory includes the encrypted client protocol and a hard-free Cloudflare Worker reference. This build does not yet persist recovery keys or an offline outbox, so it will not claim that collaboration is safe before those release gates are complete.</p><ol class="setup-steps"><li>Deploy <code>relay/worker.js</code> with <code>relay/wrangler.toml</code> on a Workers Free account.</li><li>Set <code>ALLOWED_ORIGINS</code> to the exact Sonatory origin and keep paid bindings absent.</li><li>Complete durable key storage, Recovery Kit acknowledgement, outbox replay, and invitation redemption before enabling members.</li></ol><div class="source-provenance"><strong>Why invites route here</strong><p>The relay contract exists, but issuing a code without recoverable keys could create a Group the Owner can permanently lose. This panel exposes the prerequisite and the exact implementation boundary instead of a dead disabled control.</p></div><div class="backup-actions"><a class="button" href="/relay/README.md" target="_blank">${icon('cloud')} Deployment guide</a><button type="button" data-action="export-vault">${icon('bag')} Export backup</button></div></div></section>`;
 }
 
 function renderSearch() {
@@ -612,7 +642,7 @@ function renderGroups() {
       <hr><section><span class="eyebrow">Add a friend</span><h3>Save another Vault identity</h3><form data-form="add-friend" class="form-grid"><label class="full">Contact code<input name="contact" required placeholder="sonatory-contact-v1..."><span>Ask your friend to copy their code from Profile & Vault. A contact never grants access.</span></label><div class="form-actions full"><button type="submit">Add friend</button></div></form></section>
       <hr><section><span class="eyebrow">Friends & Members</span><h3>People you know</h3>${people.size ? `<div class="member-list">${[...people.values()].map(item => memberCard(item.member, item.group)).join('')}</div>` : `<div class="empty-state"><strong>No friends yet</strong><p>Exchange contact codes or accept a future Group invitation. Each person keeps their own Vault GUID.</p></div>`}</section>
       <hr><section><div class="inventory-heading"><div><span class="eyebrow">Your Groups</span><h3>Collaboration spaces</h3></div><button data-action="new-group">${icon('plus')} Create Group</button></div>
-      ${groups.length ? `<div class="group-list">${groups.map(group => { const expanded = group.id === selectedGroupId; const members = [...(group.members || [])].sort((a, b) => (a.role === 'Owner' ? -1 : b.role === 'Owner' ? 1 : a.name.localeCompare(b.name))); return `<article class="group-card"><div class="group-row"><button class="group-summary" data-action="select-group" data-id="${group.id}" aria-expanded="${expanded}"><span><strong>${escape(group.name)}</strong><small>${members.length} ${members.length === 1 ? 'member' : 'members'} · ${escape(members.find(member => (member.vaultGuid || member.id) === state.vault.id)?.role || 'Member')}</small></span></button><button class="icon-button" data-action="group-more" data-id="${group.id}" aria-label="Permissions for ${escape(group.name)}">${icon('more')}</button></div>${expanded ? `<div class="group-detail"><div class="invite-inline"><span><strong>Invite to ${escape(group.name)}</strong><small>Encrypted sync is needed to issue a safe invite.</small></span><code>Not issued</code><button data-action="sync-required">${icon('cloud')} Set up sync</button></div><h4>Members</h4><div class="member-list">${members.map(member => memberCard(member, group)).join('')}</div></div>` : ''}</article>`; }).join('')}</div>` : `<div class="empty-state"><strong>No Groups yet</strong><p>A Group controls collaboration; it does not automatically create a Party container.</p></div>`}</section>
+      ${groups.length ? `<div class="group-list">${groups.map(group => { const expanded = group.id === selectedGroupId; const members = [...(group.members || [])].sort((a, b) => (a.role === 'Owner' ? -1 : b.role === 'Owner' ? 1 : a.name.localeCompare(b.name))); return `<article class="group-card"><div class="group-row"><button class="group-summary" data-action="select-group" data-id="${group.id}" aria-expanded="${expanded}"><span><strong>${escape(group.name)}</strong><small>${members.length} ${members.length === 1 ? 'member' : 'members'} · ${escape(members.find(member => (member.vaultGuid || member.id) === state.vault.id)?.role || 'Member')}</small></span></button><button class="icon-button" data-action="group-more" data-id="${group.id}" aria-label="Permissions for ${escape(group.name)}">${icon('more')}</button></div>${expanded ? `<div class="group-detail"><h4>Members</h4><div class="member-list">${members.map(member => memberCard(member, group)).join('')}</div></div>` : ''}</article>`; }).join('')}</div>` : `<div class="empty-state"><strong>No Groups yet</strong><p>A Group controls collaboration; it does not automatically create a Party container.</p></div>`}</section>
     </div></section>`;
 }
 
@@ -784,11 +814,14 @@ function renderActivity() {
 function renderProfile() {
   const confirmingRestore = Boolean(/** @type {any} */(utilityContext).confirmRestore && pendingRestore);
   const confirmingFolder = Boolean(/** @type {any} */(utilityContext).confirmFolderSwitch && pendingFolderSwitch);
+  const confirmingPurge = Boolean(/** @type {any} */(utilityContext).confirmPurgeVault);
   const contactCode = createContactCode({ id: state.vault.id, name: state.vault.name });
   return `<section class="panel active" aria-labelledby="profile-title">${utilityHeader('Profile & Vault', state.vault.id)}
-    <form class="panel-body" data-form="profile"><div class="hero-summary profile-summary">${imagePicker('image', state.vault, 'Change profile image')}<div class="hero-copy"><span class="eyebrow">Local Identity</span><h3>${escape(state.vault.name)}</h3><p>${escape(state.vault.title)} · ${state.vault.folderName ? `Mirrored to ${escape(state.vault.folderName)} when available.` : 'This browser is the working replica.'}</p></div></div><div class="form-grid"><label>Display name<input name="name" required maxlength="80" value="${escape(state.vault.name)}"></label><label>Vault name<input name="vaultTitle" required maxlength="80" value="${escape(state.vault.title)}"></label></div><div class="form-actions"><button type="button" data-action="switch-vault">Switch Vault</button><button class="primary" type="submit">Save</button></div></form>
+    <form class="panel-body" data-form="profile"><div class="hero-summary profile-summary">${imagePicker('image', state.vault, 'Change profile image')}<div class="hero-copy"><span class="eyebrow">Vault Identity</span><h3>${escape(state.vault.name)}</h3><p>${escape(state.vault.title)} · Saved automatically${state.vault.folderName ? ` with a folder backup in ${escape(state.vault.folderName)}.` : '.'}</p></div></div><div class="form-grid"><label>Display name<input name="name" required maxlength="80" value="${escape(state.vault.name)}"></label><label>Vault name<input name="vaultTitle" required maxlength="80" value="${escape(state.vault.title)}"></label></div><div class="form-actions"><button type="button" data-action="switch-vault">Switch Vault</button><button class="primary" type="submit">Save</button></div></form>
     <div class="panel-body contact-tools"><details class="contact-disclosure"><summary><span>Your Contact Code</span><code>${escape(contactCode.slice(0, 23))}…</code></summary><p>This shares only your display name and stable Vault GUID. It cannot grant access or recover your Vault.</p><div class="contact-code"><code>${escape(contactCode)}</code><button type="button" data-action="copy-contact">${icon('link')} Copy</button></div></details></div>
-    <div class="panel-body backup-tools"><hr><span class="eyebrow">Backup & recovery</span><h3>Keep another complete copy</h3><p class="muted">A Vault folder or exported file contains your identity and should be protected like the original.</p><div class="backup-actions"><button type="button" data-action="connect-folder">${state.vault.folderName ? 'Reconnect or open folder' : 'Add Vault folder'}</button><button type="button" data-action="export-vault">Export Vault</button></div>${confirmingFolder ? `<div class="inline-confirm" role="alert"><strong>Switch to ${escape(pendingFolderSwitch.result.state.vault.name)}?</strong><span>The selected folder has a different Vault identity. Your current browser copy remains available from Switch Vault.</span><div><button type="button" data-action="cancel-folder-switch">Cancel</button><button class="primary" type="button" data-action="confirm-folder-switch">Switch Vault</button></div></div>` : ''}<label>Restore or open an export<input type="file" accept="application/json,.json" data-action="restore-file"><span>Sonatory validates the complete file before changing the active Vault.</span></label><div class="form-actions"><button type="button" data-action="restore-backup" ${pendingRestore ? '' : 'disabled'}>Open validated export</button></div>${confirmingRestore ? `<div class="inline-confirm" role="alert"><strong>Open ${escape(pendingRestore.vault.name)}?</strong><span>Its validated identity and data become active. This Vault remains available from Switch Vault.</span><div><button type="button" data-action="cancel-restore">Cancel</button><button class="primary" type="button" data-action="confirm-restore">Open Vault</button></div></div>` : ''}</div></section>`;
+    <div class="panel-body backup-tools"><hr><span class="eyebrow">Backup & recovery</span><h3>Keep another complete copy</h3><p class="muted">A Vault folder or exported file contains your identity and should be kept somewhere you trust.</p><div class="backup-actions"><button type="button" data-action="connect-folder">${state.vault.folderName ? 'Reconnect or open folder' : 'Add Vault folder'}</button><button type="button" data-action="export-vault">Export Vault</button></div>${confirmingFolder ? `<div class="inline-confirm" role="alert"><strong>Switch to ${escape(pendingFolderSwitch.result.state.vault.name)}?</strong><span>The selected folder has a different Vault identity. Your current browser copy remains available from Switch Vault.</span><div><button type="button" data-action="cancel-folder-switch">Cancel</button><button class="primary" type="button" data-action="confirm-folder-switch">Switch Vault</button></div></div>` : ''}<label>Restore or open an export<input type="file" accept="application/json,.json" data-action="restore-file"><span>Sonatory validates the complete file before changing the active Vault.</span></label><div class="form-actions"><button type="button" data-action="restore-backup" ${pendingRestore ? '' : 'disabled'}>Open validated export</button></div>${confirmingRestore ? `<div class="inline-confirm" role="alert"><strong>Open ${escape(pendingRestore.vault.name)}?</strong><span>Its validated identity and data become active. This Vault remains available from Switch Vault.</span><div><button type="button" data-action="cancel-restore">Cancel</button><button class="primary" type="button" data-action="confirm-restore">Open Vault</button></div></div>` : ''}</div>
+    <div class="panel-body vault-danger"><hr><div class="danger-zone"><div><span class="eyebrow">Danger zone</span><h3>Purge this Vault</h3><p>Delete this Vault and everything it contains or owns.</p></div><button class="danger" type="button" data-action="request-purge-vault">Purge Vault</button></div></div>
+    ${confirmingPurge ? `<div class="panel-confirm-layer" role="presentation"><form class="confirm-dialog" data-form="purge-vault" role="alertdialog" aria-modal="true" aria-labelledby="purge-vault-title" aria-describedby="purge-vault-description"><span class="eyebrow">Permanent deletion</span><h3 id="purge-vault-title">Purge ${escape(state.vault.title)}?</h3><p id="purge-vault-description">This removes the Vault from this browser${state.vault.folderName ? ` and deletes its Sonatory files from ${escape(state.vault.folderName)}` : ''}, including every Item, Container, Tag, Collection, Group, friend, and Activity entry. It cannot be undone.</p><label>Type <strong>${escape(state.vault.title)}</strong> to confirm<input name="confirmation" required autocomplete="off" data-action="purge-vault-confirmation" autofocus></label><div class="form-actions"><button type="button" data-action="cancel-purge-vault">Cancel</button><button class="danger" type="submit" data-purge-vault-submit disabled>Purge Vault</button></div></form></div>` : ''}</section>`;
 }
 
 function renderMobileMenu() {
@@ -1066,29 +1099,45 @@ async function handleSubmit(form) {
       const data = new FormData(form);
       state = createState(String(data.get('vaultName') || 'My adventures'), String(data.get('displayName') || ''), { density: /** @type {any} */(data.get('density') || 'normal') });
       state.vault.image = pendingImage;
-      const backing = String(data.get('backing') || 'browser');
+      const folderBackup = data.get('folderBackup') === 'folder';
       let openedExistingFolder = false;
-      if (backing === 'folder') {
+      if (folderBackup) {
         const result = await chooseVaultFolder(state);
         openedExistingFolder = result.existing && result.state.vault.id !== state.vault.id;
         state = result.state;
       }
-      if (backing === 'cloud') state.cloud.status = 'Setup needed';
       await saveDeviceSettings(state.settings);
       await saveState(state);
       activePanel = '';
       view = 'home';
-      utility = backing === 'cloud' ? 'sync-setup' : '';
-      utilityContext = backing === 'cloud' ? { fromOnboarding: true } : {};
+      utility = '';
+      utilityContext = {};
       utilityStack = [];
       utilityReturnView = 'home';
       utilityReturnPanel = '';
       window.scrollTo(0, 0);
       pendingImage = null;
       renderShell();
-      announce(openedExistingFolder ? 'Existing Vault opened from its folder.' : state.vault.folderName ? 'Vault created with a folder mirror.' : backing === 'cloud' ? 'Vault created locally. Finish encrypted cloud setup to begin syncing.' : 'Vault created and saved locally.');
+      queueAutomaticCloudSync();
+      announce(openedExistingFolder ? 'Existing Vault opened from its folder.' : state.vault.folderName ? 'Vault created with automatic saving and a folder backup.' : 'Vault created. Changes save automatically.');
     }
     if (!state) return;
+    if (form.dataset.form === 'purge-vault') {
+      const expected = state.vault.title;
+      if (String(new FormData(form).get('confirmation') || '') !== expected) throw new Error(`Type ${expected} exactly to purge this Vault.`);
+      await cloudQueue.catch(() => {});
+      const replica = activeCloudReplica();
+      if (!replica) throw new Error('The encrypted hosted copy could not be reached. Nothing was deleted.');
+      await replica.purge();
+      await purgeVault(state);
+      state = null;
+      cloudReplica = null; cloudStatus = 'Automatic';
+      utility = ''; utilityContext = {}; utilityStack = []; activePanel = ''; view = 'home';
+      pendingImage = null; pendingRestore = null; pendingFolderSwitch = null;
+      await renderOnboarding();
+      announce(`${expected} and every copy managed by Sonatory were purged.`);
+      return;
+    }
     if (form.dataset.form === 'entity-editor') {
       const entity = makeEntity(form);
       const exists = Boolean(state.entities[entity.id]);
@@ -1253,6 +1302,10 @@ app.addEventListener('input', async event => {
     const output = target.closest('label')?.querySelector('output');
     if (output) output.textContent = `${target.value}°`;
   }
+  if (target.dataset.action === 'purge-vault-confirmation' && state) {
+    const button = document.querySelector('[data-purge-vault-submit]');
+    if (button instanceof HTMLButtonElement) button.disabled = target.value !== state.vault.title;
+  }
   if (target.name === 'theme' && state) { state.settings.theme = target.value; applyPreferences(); }
   if (target.name === 'motion' && state) { state.settings.motion = /** @type {any} */(target.value); applyPreferences(); }
   if (target.name === 'image' && target instanceof HTMLInputElement && target.files?.[0]) {
@@ -1342,7 +1395,7 @@ async function handleClick(target) {
   if (action === 'open-vault') {
     setActiveVault(target.dataset.id || '');
     state = await loadActiveState();
-    if (state) { view = 'home'; renderShell(); }
+    if (state) { cloudReplica = null; cloudStatus = 'Automatic'; view = 'home'; renderShell(); queueAutomaticCloudSync(); }
     return;
   }
   if (!state) return;
@@ -1509,11 +1562,14 @@ async function handleClick(target) {
     const restored = structuredClone(pendingRestore);
     restored.settings = structuredClone(state.settings);
     state = restored;
+    cloudReplica = null; cloudStatus = 'Automatic';
     pendingRestore = null;
     storageWarning = '';
     utility = ''; view = 'home'; activePanel = state.recentTabs.at(-1) || '';
     await saveState(state); renderShell(); announce(`${state.vault.name} opened from the validated export.`);
   }
+  if (action === 'request-purge-vault') { utilityContext = { ...utilityContext, confirmPurgeVault: true }; renderShell(); requestAnimationFrame(() => document.querySelector('[data-action="purge-vault-confirmation"]')?.focus()); }
+  if (action === 'cancel-purge-vault') { utilityContext = { ...utilityContext, confirmPurgeVault: false }; renderShell(); }
   if (action === 'close-utility') closeUtility();
   if (action === 'utility-back') utilityBack();
   if (action === 'search-tag') {
@@ -1666,7 +1722,6 @@ async function handleClick(target) {
     await persist(`${friend.name} removed from saved friends. Group membership, if any, is unchanged.`); renderShell();
   }
   if (action === 'group-more') openUtility('permissions', { groupId: target.dataset.id });
-  if (action === 'sync-required' || action === 'sync-setup') openUtility('sync-setup');
   if (action === 'disband-group') { utilityContext = { ...utilityContext, confirmDisband: true }; renderShell(); }
   if (action === 'cancel-disband') { utilityContext = { ...utilityContext, confirmDisband: false }; renderShell(); }
   if (action === 'confirm-disband') {
@@ -1676,7 +1731,7 @@ async function handleClick(target) {
     utility = 'groups'; utilityContext = {};
     await persist(`${group.name} disbanded. Undo is available.`); renderShell();
   }
-  if (action === 'switch-vault') { clearActiveVault(); state = null; await renderOnboarding(); }
+  if (action === 'switch-vault') { clearActiveVault(); state = null; cloudReplica = null; cloudStatus = 'Automatic'; await renderOnboarding(); }
 }
 
 app.addEventListener('click', event => {
@@ -1898,6 +1953,7 @@ document.addEventListener('keydown', event => {
     event.preventDefault();
     queueUiAction(() => {
       if (/** @type {any} */(utilityContext).confirmPurge) { utilityContext = { ...utilityContext, confirmPurge: false }; renderShell(); return; }
+      if (/** @type {any} */(utilityContext).confirmPurgeVault) { utilityContext = { ...utilityContext, confirmPurgeVault: false }; renderShell(); return; }
       if (/** @type {any} */(utilityContext).confirmDelete) { utilityContext = { ...utilityContext, confirmDelete: false }; renderShell(); return; }
       if (/** @type {any} */(utilityContext).confirmDisband) { utilityContext = { ...utilityContext, confirmDisband: false }; renderShell(); return; }
       utilityStack.length ? utilityBack() : closeUtility();
@@ -1910,11 +1966,13 @@ async function init() {
     state = await loadActiveState();
     if (!state) await renderOnboarding();
     else {
+      const cloudDefaultsChanged = !state.cloud.enabled || state.cloud.status !== 'Automatic';
+      state.cloud = { enabled: true, status: 'Automatic' };
       const productRefresh = syncProductDefaults(state);
       const managedRefresh = syncManagedItems(state);
       const queryRefresh = syncQueryBindings(state);
-      if (managedRefresh.added || managedRefresh.updated || productRefresh.tagged || productRefresh.sourcesChanged || queryRefresh) await saveState(state);
-      activePanel = state.recentTabs.at(-1) || ''; renderShell();
+      if (cloudDefaultsChanged || managedRefresh.added || managedRefresh.updated || productRefresh.tagged || productRefresh.sourcesChanged || queryRefresh) await saveState(state);
+      activePanel = state.recentTabs.at(-1) || ''; renderShell(); queueAutomaticCloudSync();
     }
     registerServiceWorker().catch(() => {});
   } catch (error) {

@@ -221,4 +221,5 @@ export class RelayRegistry {
     if (!space) throw new RelayError(404, 'not_found', 'Synchronization boundary was not found.');
     return space;
   }
+  delete(kind, guid) { return this.spaces.delete(this.key(kind, guid)); }
 }

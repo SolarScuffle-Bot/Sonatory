@@ -16,6 +16,9 @@
   .profile-button { overflow: visible !important; }
   .profile-button img { border-radius: 50%; }
   .profile-button .status-dot { z-index: 2; right: -.14rem; bottom: -.14rem; width: .78rem; box-shadow: 0 0 0 1px var(--bg-elevated); }
+  .profile-button[data-cloud-status="syncing"] .status-dot { background: var(--accent); animation: cloud-pulse .8s ease-in-out infinite alternate; }
+  .profile-button[data-cloud-status="offline"] .status-dot { background: var(--warning, #d39a4a); }
+  @keyframes cloud-pulse { from { opacity: .45; } to { opacity: 1; } }
 
   .popup-layer { inset: var(--header-h) 0 0; padding: clamp(.5rem, 2vw, 1.5rem); }
   .popup-workspace { max-height: calc(100dvh - var(--header-h) - clamp(1rem, 4vw, 3rem)); }
@@ -683,6 +686,20 @@
   .onboarding-identity-row { display: grid; grid-template-columns: auto repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .7rem; }
   .onboarding-identity-row .image-picker { width: 4.55rem; flex-basis: 4.55rem; border-radius: .75rem; }
   .onboarding-identity-row > label { align-self: stretch; }
+  .recent-vaults { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); align-items: center; gap: 1rem; margin: 1.15rem 0; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--accent-soft); padding: 1rem 1.1rem; }
+  .recent-vaults-copy { min-width: 0; }
+  .recent-vaults-copy strong { display: block; font-size: 1rem; }
+  .recent-vaults-copy p { margin: .25rem 0 0; color: var(--muted); line-height: 1.45; }
+  .recent-vault-list { min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+  .recent-vault-list button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-backup-choice { display: flex; align-items: flex-start; gap: .65rem; margin: 1rem 0 1.1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--bg-elevated); padding: .8rem; cursor: pointer; }
+  .folder-backup-choice:has(input:checked) { border-color: var(--border-strong); background: var(--accent-soft); }
+  .folder-backup-choice:has(input:disabled) { cursor: not-allowed; opacity: .72; }
+  .folder-backup-choice > input { width: 1.1rem; min-height: 1.1rem; margin: .2rem 0 0; flex: 0 0 auto; }
+  .folder-backup-choice > span { min-width: 0; display: flex; align-items: flex-start; gap: .6rem; }
+  .folder-backup-choice .icon { margin-top: .1rem; flex: 0 0 auto; }
+  .folder-backup-choice strong, .folder-backup-choice small { display: block; }
+  .folder-backup-choice small { margin-top: .15rem; color: var(--muted); font-size: .875rem; line-height: 1.4; }
   .choice-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem; margin: .5rem 0 1rem; }
   .choice { display: block; border: 1px solid var(--border); border-radius: .75rem; padding: .75rem; background: var(--bg-elevated); }
   .choice:has(input:checked) { border-color: var(--border-strong); background: var(--accent-soft); }
@@ -717,6 +734,8 @@
   .permission-grid span { color: var(--muted); }
   .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .danger-zone p { color: var(--muted); margin: .25rem 0 0; }
+  .danger-zone h3 { margin: .2rem 0 0; }
+  .vault-danger { padding-top: 0; }
   .inline-confirm { min-width: min(100%, 20rem); display: grid; gap: .35rem; border: 1px solid var(--danger); border-radius: .7rem; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); padding: .7rem; }
   .inline-confirm > span { color: var(--muted); }
   .inline-confirm > div { display: flex; justify-content: flex-end; gap: .4rem; }
@@ -815,6 +834,8 @@
     .onboarding-identity-row { grid-template-columns: 4.25rem minmax(0, 1fr); }
     .onboarding-identity-row .image-picker { width: 4.25rem; }
     .onboarding-identity-row > label:last-child { grid-column: 1 / -1; }
+    .recent-vaults { grid-template-columns: 1fr; gap: .75rem; padding: .9rem; }
+    .recent-vault-list { justify-content: flex-start; }
     .recent-tab, .recent-tab-group { min-height: 2.75rem; }
     .recent-tab-group .tab-close { min-width: 2.75rem; }
     .invite-inline { grid-template-columns: 1fr auto; }

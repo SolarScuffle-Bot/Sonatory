@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [app, css] = await Promise.all([
+const [app, css, index, headers] = await Promise.all([
   readFile(new URL('../src/app.js', import.meta.url), 'utf8'),
-  readFile(new URL('../styles.css', import.meta.url), 'utf8')
+  readFile(new URL('../styles.css', import.meta.url), 'utf8'),
+  readFile(new URL('../index.html', import.meta.url), 'utf8'),
+  readFile(new URL('../_headers', import.meta.url), 'utf8')
 ]);
 
 test('inventory drag uses one pointer-event path with no native draggable conflict', () => {
@@ -73,14 +75,31 @@ test('density, wheel traversal, images, and inline quantity retain their contrac
   assert.ok(settings.indexOf('<legend>Accent') < settings.indexOf('Custom Accent Hue'));
 });
 
-test('onboarding is one centered panel with inline identity image and selectable cloud handoff', () => {
+test('onboarding is one centered online-first panel with only an optional folder backup', () => {
   const onboarding = app.slice(app.indexOf('async function renderOnboarding'), app.indexOf('function renderShell'));
   assert.doesNotMatch(onboarding, /onboarding-intro/);
   assert.match(onboarding, /class="onboarding-identity-row full"/);
   assert.doesNotMatch(onboarding, /Optional\. If omitted/);
-  assert.match(onboarding, /name="backing" value="cloud">/);
-  assert.doesNotMatch(onboarding, /value="cloud" disabled/);
-  assert.match(app, /backing === 'cloud' \? 'sync-setup' : ''/);
+  assert.match(onboarding, /name="folderBackup" value="folder"/);
+  assert.doesNotMatch(onboarding, /name="backing"|Encrypted cloud|sync-setup/);
+  assert.match(onboarding, /class="recent-vaults" aria-labelledby="recent-vaults-title"/);
   assert.match(css, /\.onboarding\s*\{[^}]*place-items:\s*center/s);
   assert.match(css, /\.onboarding-identity-row\s*\{[^}]*grid-template-columns:\s*auto repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.match(css, /\.recent-vaults\s*\{[^}]*padding:\s*1rem 1\.1rem/s);
+});
+
+test('Profile exposes a typed, modal Vault purge and no relay configuration', () => {
+  const profile = app.slice(app.indexOf('function renderProfile'), app.indexOf('function renderMobileMenu'));
+  assert.match(profile, /data-action="request-purge-vault"/);
+  assert.match(profile, /data-form="purge-vault" role="alertdialog" aria-modal="true"/);
+  assert.match(profile, /data-purge-vault-submit disabled/);
+  assert.match(app, /await purgeVault\(state\)/);
+  assert.doesNotMatch(app, /Cloudflare or custom relay|Power-user relay configuration|Deployment guide/);
+});
+
+test('production declares only the automatic encrypted relay and permits its exact origin', () => {
+  const relay = 'https://sonatory-relay.sonatory-solar-scuffle.workers.dev';
+  assert.match(index, new RegExp(`<meta name="sonatory-relay" content="${relay.replaceAll('.', '\\.')}/v1/spaces">`));
+  assert.match(headers, new RegExp(`connect-src 'self' ${relay.replaceAll('.', '\\.')};`));
+  assert.doesNotMatch(index, /Cloudflare|custom relay|Encrypted Cloud/);
 });

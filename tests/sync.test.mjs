@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { createSonatoryServer } from '../server.mjs';
 import { createSyncIdentity, SyncClient, SyncError } from '../src/sync.js';
 import { canonicalJson, sha256 } from '../relay/core.js';
+import { cloudGenesis } from '../src/cloud.js';
+import { createState } from '../src/core.js';
+
+test('automatic cloud genesis excludes managed definitions while retaining empty Vault structure', () => {
+  const state = createState('Fresh Cloud Vault', 'Cloud User');
+  const genesis = cloudGenesis(state);
+  assert.equal(Object.values(genesis.entities).some(entity => entity.managed), false);
+  assert.equal(Object.values(genesis.entities).some(entity => !entity.tags.includes('Tag')), false);
+  assert.deepEqual(genesis.collections.map(collection => collection.name), ['Characters', 'Parties', 'Bags']);
+  assert.deepEqual(genesis.cloud, { enabled: true, status: 'Automatic' });
+});
 
 test('browser sync client encrypts, signs, pushes, verifies, pulls, and decrypts through HTTP relay', async () => {
   const server = createSonatoryServer();
@@ -26,6 +37,8 @@ test('browser sync client encrypts, signs, pushes, verifies, pulls, and decrypts
 
     const altered = { ...pushed.envelope, ciphertext: pushed.envelope.ciphertext.slice(0, -1) + (pushed.envelope.ciphertext.endsWith('A') ? 'B' : 'A') };
     await assert.rejects(reader.decrypt(altered), error => error instanceof SyncError && error.code === 'invalid_envelope');
+    await reader.purge();
+    await assert.rejects(reader.pull(0), error => error instanceof SyncError && error.code === 'not_found');
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 

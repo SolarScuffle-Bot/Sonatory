@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDecimal, canMove, commit, compareDecimal, computeAllWeights, computeWeight, createState, decimalToString, formatExactDecimal, guid, managedBaseEntity, parseDecimal, parseQuery, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, searchEntities, structuralFingerprint, syncManagedItems, syncProductDefaults, undo } from '../src/core.js';
+import { addDecimal, canMove, commit, compareDecimal, computeAllWeights, computeWeight, decimalToString, formatExactDecimal, guid, managedBaseEntity, parseDecimal, parseQuery, prepareInventoryMove, prepareRestack, prepareStackSplit, redo, resolveQueryBindings, restackCandidates, searchEntities, structuralFingerprint, syncManagedItems, syncProductDefaults, undo } from '../src/core.js';
+import { createExampleState as createState } from './helpers.mjs';
 
 test('exact decimals normalize and add without floating point error', () => {
   assert.equal(decimalToString(parseDecimal('001.2300')), '1.23');
@@ -13,6 +14,19 @@ test('exact decimal display preserves values beyond floating-point precision', (
   assert.equal(formatExactDecimal('-0.125', 'en-US'), '-0.125');
   assert.equal(formatExactDecimal('not-a-number', 'en-US'), 'not-a-number');
   assert.throws(() => parseDecimal('1'.repeat(4_097)), /safety bound/);
+});
+
+test('new production Vaults contain only starter structure and managed definitions', async () => {
+  const { createState: createProductionState } = await import('../src/core.js');
+  const state = createProductionState('Fresh Vault', 'Fresh User');
+  const localContent = Object.values(state.entities).filter(entity => !entity.tags.includes('Tag') && !entity.managed);
+  assert.deepEqual(localContent, []);
+  assert.deepEqual(state.collections.map(collection => collection.name), ['Characters', 'Parties', 'Bags']);
+  assert.deepEqual(state.groups, []);
+  assert.deepEqual(state.friends, []);
+  assert.deepEqual(state.history.events, []);
+  assert.deepEqual(state.cloud, { enabled: true, status: 'Automatic' });
+  assert.ok(searchEntities(state, '+Managed').length >= 416);
 });
 
 test('recursive weight includes quantities and nested container contents', () => {

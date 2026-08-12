@@ -41,6 +41,7 @@ test('Cloudflare reference Worker matches the client contract, CORS policy, hard
   const preflight = await worker.fetch(new Request(endpoint, { method: 'OPTIONS', headers: { origin: 'https://app.example' } }), env);
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://app.example');
+  assert.match(preflight.headers.get('access-control-allow-methods') || '', /DELETE/);
 
   const identity = await createSyncIdentity('vault', boundaryGuid, boundaryGuid, 'device-worker-1234');
   const writer = new SyncClient({ endpoint, identity, fetchImpl: callWorker });
@@ -57,4 +58,7 @@ test('Cloudflare reference Worker matches the client contract, CORS policy, hard
   assert.deepEqual((await reader.pull(0)).map(event => event.payload), [payload]);
   assert.equal(storage.kv.get('meta').head, 1);
   assert.ok(storage.kv.get('event:000000000001'));
+  await reader.purge();
+  assert.equal(storage.kv.get('meta'), undefined);
+  assert.equal(storage.alarmAt, null);
 });

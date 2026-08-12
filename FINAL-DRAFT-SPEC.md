@@ -121,16 +121,16 @@ Multiple Vaults on one device intentionally behave as different users. Creating 
 
 A complete valid Vault folder is a bearer of that identity: possession grants access and authority. Sonatory must clearly explain that copying or sharing the folder copies the identity.
 
-### 4.2 Backing configurations
+### 4.2 Automatic encrypted storage and optional backups
 
-A Vault always has a browser working replica and may additionally use:
+A Vault opened through the hosted web application always has:
 
-- the encrypted hard-free hosted replica;
-- a user-selected Vault folder where supported;
-- both;
+- an instant browser working replica;
+- an automatically managed encrypted hard-free hosted replica;
+- an optional user-selected Vault folder where supported;
 - a portable archive fallback where directory access is unavailable.
 
-Browser-only Vaults are permitted but visibly described as not backed up. A complete folder is independently sufficient to recover. A hosted replica plus its Recovery Kit is sufficient to recover after browser-site storage is cleared.
+The hosted replica is infrastructure, not an onboarding choice. Normal users are never asked to choose a relay, deploy Cloudflare, configure an origin, or understand the synchronization implementation. A complete folder is independently sufficient to recover. A hosted replica plus its Recovery Kit is sufficient to recover after browser-site storage is cleared.
 
 Enabling the hosted replica creates an encrypted downloadable/printable Recovery Kit containing the high-entropy secret and locator needed to recover the root identity from hosted ciphertext. The root secret is never sent in plaintext. A user acknowledges the Kit once before relying on cloud as the only backing or first creating/joining a Group. A complete Vault folder needs no separate Kit because it already carries the identity.
 
@@ -142,7 +142,9 @@ If a previously opened Vault is still available in browser storage, Sonatory ope
 
 When no cached Vault is available, the first screen presents recent recoverable references when available, **Open Existing Vault**, and **Create New Vault**.
 
-New Vault setup is one centered responsive panel with responsible defaults already selected; it has no separate promotional or explanatory pane. The optional square identity image sits directly left of the display-name field and reserves no separate explanatory row. The panel shows backing choices, identity consequences, display name, optional image, cloud choice, folder choice, recovery information, and optional starter configuration together. Encrypted hosted backup is selectable and identified as the resilient choice, but selecting it first creates the safe local working copy and immediately continues into encrypted-sync setup; the UI must not claim cloud publication until that setup succeeds. Progressive explanations may expand in place, but setup must not become a page-by-page wizard.
+New Vault setup is one centered responsive panel with responsible defaults already selected; it has no separate promotional or explanatory pane. The optional square identity image sits directly left of the display-name field and reserves no separate explanatory row. The panel shows display name, optional image, Vault name, an optional Vault-folder backup checkbox, and accessibility density together. Automatic encrypted storage requires no user decision and exposes no relay configuration. Progressive explanations may expand in place, but setup must not become a page-by-page wizard. A new Vault contains the three starter Collections and managed definitions, but no sample Items, Containers, Groups, friends, or Activity.
+
+Profile & Vault exposes **Purge Vault** in a distinct danger zone. Purge requires typing the Vault name in an accessible modal confirmation, then removes the browser Vault, its Items, Containers, Tags, Collections, Groups, friends, Activity, hosted ciphertext, and known Sonatory files in the connected Vault folder. If a required target cannot be reached or authorized, Sonatory reports the remaining copy and does not falsely claim a complete purge.
 
 No email address or phone number is required for identity, operation, invitations, recovery, or expiry warnings.
 

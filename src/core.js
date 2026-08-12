@@ -702,7 +702,7 @@ export function undo(state) {
   if (!original) return null;
   for (const change of [...original.changes].reverse()) writePath(state, change.path, change.before);
   state.history.redoStack.push(id);
-  const event = { id: guid(), label: `Undo ${original.label}`, at: new Date().toISOString(), kind: /** @type {'undo'} */('undo'), changes: [], relatedTo: id };
+  const event = { id: guid(), label: `Undo ${original.label}`, at: new Date().toISOString(), kind: /** @type {'undo'} */('undo'), changes: original.changes.map(change => ({ path: change.path, before: structuredClone(change.after), after: structuredClone(change.before) })), relatedTo: id };
   state.history.events.push(event);
   return event;
 }
@@ -715,9 +715,21 @@ export function redo(state) {
   if (!original) return null;
   for (const change of original.changes) writePath(state, change.path, change.after);
   state.history.undoStack.push(id);
-  const event = { id: guid(), label: `Redo ${original.label}`, at: new Date().toISOString(), kind: /** @type {'redo'} */('redo'), changes: [], relatedTo: id };
+  const event = { id: guid(), label: `Redo ${original.label}`, at: new Date().toISOString(), kind: /** @type {'redo'} */('redo'), changes: original.changes.map(change => ({ path: change.path, before: structuredClone(change.before), after: structuredClone(change.after) })), relatedTo: id };
   state.history.events.push(event);
   return event;
+}
+
+/** Applies one canonically ordered encrypted remote event once. @param {AppState} state @param {HistoryEvent} event */
+export function applyRemoteEvent(state, event) {
+  if (state.history.events.some(existing => existing.id === event.id)) return false;
+  if (!event || typeof event.id !== 'string' || typeof event.label !== 'string' || !Array.isArray(event.changes)) throw new Error('The encrypted change is malformed.');
+  for (const change of event.changes) {
+    if (!change || typeof change.path !== 'string' || !isSafeMutationPath(change.path)) throw new Error('The encrypted change contains an unsupported state path.');
+  }
+  for (const change of event.changes) writePath(state, change.path, structuredClone(change.after));
+  state.history.events.push(structuredClone(event));
+  return true;
 }
 
 /** @param {string} vaultName @param {string} displayName @param {Partial<AppState['settings']>} [preferences] @returns {AppState} */
@@ -729,70 +741,17 @@ export function createState(vaultName, displayName, preferences = {}) {
     vault: { id: guid(), name: displayName || 'Local user', title: vaultName || `${displayName || 'My'} Vault`, image: null, createdAt: now },
     settings: { density: 'normal', mode: 'system', theme: 'modern', accent: 'custom', hue: 33, motion: 'system', ...preferences },
     sourceDefaultsVersion: SOURCE_DEFAULTS_VERSION,
-    entities: {}, collections: [], itemSources: createDefaultItemSources(), history: { events: [], undoStack: [], redoStack: [], branches: [] }, recentTabs: [], groups: [], friends: [], cloud: { enabled: false, status: 'On this device' }
+    entities: {}, collections: [], itemSources: createDefaultItemSources(), history: { events: [], undoStack: [], redoStack: [], branches: [] }, recentTabs: [], groups: [], friends: [], cloud: { enabled: true, status: 'Automatic' }
   };
-  const make = (name, description, container, quantity, weight, tags = []) => {
+  const makeTag = (name, description) => {
     const id = guid();
-    state.entities[id] = { id, name, description, tags, parentId: null, container, quantity, weight, image: null, createdAt: now, updatedAt: now };
+    state.entities[id] = { id, name, description, tags: ['Tag'], parentId: null, container: false, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now };
     return id;
   };
-  const tag = name => make(name, `${name} groups matching things.`, false, 1, '0', ['Tag']);
-  tag('Tag');
-  const characterTag = tag('Character');
-  const partyTag = tag('Party');
-  const packTag = tag('Bag');
-  const weaponTag = tag('Weapon');
-  const supplyTag = tag('Supply');
-  const consumableTag = tag('Consumable');
-  const managedTag = tag('Managed');
-  const aria = make('Aria Thorn', 'A road-wise ranger prepared for long journeys.', true, 1, '142', [characterTag]);
-  const wayfarers = make('The Wayfarers', 'A small company bound for the roads beyond Aldercross.', true, 1, '18', [partyTag]);
-  const satchel = make('Ashen Satchel', 'A weathered field satchel with carefully arranged contents.', true, 1, '2', [packTag]);
-  const fieldKit = make('Field Kit', 'Everything needed to make camp before dark.', true, 1, '6', [packTag]);
-  const potionCase = make('Potion Case', 'A padded case for fragile supplies.', true, 1, '1', [packTag]);
-  const cache = make('Bridge Cache', 'Supplies left with friends near the old bridge.', true, 1, '4', [packTag]);
-  const sword = make('Iron Longsword', 'A dependable blade with a cord-wrapped grip.', false, 2, '3', [weaponTag]);
-  const rations = make('Trail Rations', 'Dried fruit, hard cheese, and oat cakes.', false, 8, '2', [supplyTag, consumableTag]);
-  const rope = make('Silk Rope', 'Fifty feet, tightly coiled.', false, 1, '5', [supplyTag]);
-  const potion = make('Potion of Healing', 'A crimson restorative in a square glass vial.', false, 3, '0.5', [consumableTag]);
-  const lantern = make('Hooded Lantern', 'Warm light with a shuttered brass hood.', false, 1, '2', [supplyTag]);
-  const bedroll = make('Bedroll', 'Waxed canvas and wool.', false, 2, '7', [supplyTag]);
-  state.entities[sword].parentId = aria;
-  state.entities[rations].parentId = wayfarers;
-  state.entities[rope].parentId = satchel;
-  state.entities[potion].parentId = potionCase;
-  state.entities[lantern].parentId = fieldKit;
-  state.entities[bedroll].parentId = cache;
-  for (const [name, description, weight] of [
-    ['Mira Fen', 'An alchemist who labels everything twice.', '96'],
-    ['Yohan the Great', 'A cheerful knight with an impractical number of capes.', '188'],
-    ['Sable Voss', 'A quiet scout who travels lighter than rumor.', '74'],
-    ['Brother Cal', 'A patient healer and keeper of the road shrine.', '121'],
-    ['Tess Ember', 'A fire-touched scholar with a portable library.', '109'],
-    ['Orin Pike', 'A veteran delver who never leaves rope behind.', '166'],
-    ['Nim Underbough', 'A quick-handed courier with hidden pockets.', '62']
-  ]) make(name, description, true, 1, weight, [characterTag]);
-  for (const [name, description, weight] of [
-    ['Lantern Company', 'Night-road travelers sharing light and supplies.', '22'],
-    ['Aldercross Watch', 'A volunteer patrol provisioned for the north road.', '31'],
-    ['The Green Table', 'Friends, maps, and provisions for a weekly expedition.', '16'],
-    ['Cinderbound', 'A compact crew prepared for smoke and stone.', '28'],
-    ['Harbor Runners', 'Dockside problem-solvers with a communal cache.', '25'],
-    ['Moonwake Crew', 'Sailors and stargazers between long voyages.', '37'],
-    ['Quiet Compass', 'Explorers who prefer careful plans and lighter packs.', '19']
-  ]) make(name, description, true, 1, weight, [partyTag]);
-  for (const [name, description, weight] of [
-    ['Herbalist Pouch', 'Small paper packets sorted by scent.', '1'],
-    ['Map Case', 'Oiled leather with a snug brass cap.', '1.5'],
-    ['Quartermaster Crate', 'A stout shared crate with divided trays.', '9'],
-    ['Rope Basket', 'A broad basket designed to prevent knots.', '3'],
-    ['Winter Pack', 'Fur-lined and ready for deep snow.', '8'],
-    ['Scroll Tube', 'Waxed oak with a watertight seam.', '1'],
-    ['Spice Box', 'Six tiny compartments and one stubborn latch.', '2'],
-    ['Traveler Trunk', 'A low iron-bound trunk for long roads.', '12']
-  ]) make(name, description, true, 1, weight, [packTag]);
-  state.entities[satchel].parentId = aria;
-  state.entities[potionCase].parentId = wayfarers;
+  makeTag('Tag', 'Tags label and organize items, Containers, and other Tags.');
+  makeTag('Character', 'Character groups matching things.');
+  makeTag('Party', 'Party groups matching things.');
+  makeTag('Bag', 'Bag groups matching things.');
   state.collections = [
     { id: guid(), name: 'Characters', description: 'People whose inventories you manage.', query: '+Character' },
     { id: guid(), name: 'Parties', description: 'Shared travel and campaign inventories.', query: '+Party' },

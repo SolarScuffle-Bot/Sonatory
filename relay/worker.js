@@ -124,7 +124,7 @@ export class SyncSpace {
   }
 
   async push(meta, envelopes) {
-    if (!Array.isArray(envelopes) || !envelopes.length || envelopes.length > 100) throw new RelayError(400, 'invalid_batch', 'Push requires 1–100 envelopes.');
+    if (!Array.isArray(envelopes) || !envelopes.length || envelopes.length > 100) throw new RelayError(400, 'invalid_batch', 'Push requires 1 to 100 envelopes.');
     const verify = await this.authorizer(meta);
     const operationIds = envelopes.map(envelope => String(envelope?.operationId || ''));
     const space = this.hydrate(meta, operationIds);
@@ -155,7 +155,7 @@ export class SyncSpace {
     try {
       const url = new URL(request.url);
       const action = url.pathname.endsWith('/handshake') ? 'handshake' : url.pathname.endsWith('/events') ? 'events' : 'create';
-      const body = request.method === 'GET' ? null : await this.readBody(request);
+      const body = request.method === 'GET' || request.method === 'DELETE' ? null : await this.readBody(request);
       const boundary = /^\/v1\/spaces\/(vault|group)\/([a-zA-Z0-9-]{8,128})/.exec(url.pathname);
       if (request.method === 'POST' && action === 'create') return json(await this.create({ ...body, kind: boundary?.[1], guid: boundary?.[2] }), 201);
       const meta = this.meta();
@@ -163,6 +163,7 @@ export class SyncSpace {
       if (request.method === 'POST' && action === 'handshake') return json(await this.handshake(meta, body));
       const token = /^Bearer\s+([A-Za-z0-9]+)$/.exec(String(request.headers.get('authorization') || ''))?.[1] || '';
       if (!this.authorize(meta, token)) throw new RelayError(401, 'authentication_required', 'Complete a signed device handshake before Push or Pull.');
+      if (request.method === 'DELETE' && action === 'create') { await this.ctx.storage.deleteAll(); return new Response(null, { status: 204 }); }
       if (request.method === 'GET' && action === 'events') return json(await this.pull(meta, Number(url.searchParams.get('after') || 0), Number(url.searchParams.get('limit') || 200)));
       if (request.method === 'POST' && action === 'events') return json(await this.push(meta, body.envelopes));
       throw new RelayError(405, 'method_not_allowed', 'Method is not allowed.');
@@ -206,7 +207,7 @@ export default {
     if (origin && !allowed.includes(origin)) return json({ error: 'origin_not_allowed', message: 'This application origin is not allowed to use the relay.' }, 403);
     if (request.method === 'OPTIONS') {
       if (!origin) return json({ error: 'origin_required', message: 'CORS preflight requires an Origin.' }, 400);
-      return withCors(new Response(null, { status: 204, headers: { 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '86400' } }), origin);
+      return withCors(new Response(null, { status: 204, headers: { 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '86400' } }), origin);
     }
     const match = /^\/v1\/spaces\/(vault|group)\/([a-zA-Z0-9-]{8,128})(?:\/(handshake|events))?$/.exec(url.pathname);
     if (!match) return withCors(json({ error: 'not_found', message: 'Endpoint not found.' }, 404), origin);

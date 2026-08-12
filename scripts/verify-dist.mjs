@@ -7,7 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(root, 'dist');
 const required = [
   'index.html', 'styles.css', 'manifest.webmanifest', 'sw.js', '_headers', '_redirects',
-  'assets/mark.svg', 'src/app.js', 'src/core.js', 'src/ecs.js',
+  'assets/mark.svg', 'src/app.js', 'src/cloud.js', 'src/core.js', 'src/ecs.js',
   'src/managed/srd-5.2.1.js', 'src/importers/ddb-worker.js',
   'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'
 ];

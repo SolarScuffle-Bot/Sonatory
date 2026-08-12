@@ -1,6 +1,6 @@
-const CACHE = 'sonatory-shell-v31';
+const CACHE = 'sonatory-shell-v32';
 const CACHE_PREFIX = 'sonatory-shell-';
-const ASSETS = ['/', '/index.html', '/styles.css', '/src/app.js', '/src/core.js', '/src/ecs.js', '/src/ecs-projection.js', '/src/contacts.js', '/src/storage.js', '/src/sync.js', '/src/managed/srd-5.2.1.js', '/src/importers/ddb-parser.js', '/src/importers/ddb-worker.js', '/vendor/pdfjs/pdf.min.mjs', '/vendor/pdfjs/pdf.worker.min.mjs', '/manifest.webmanifest', '/assets/mark.svg'];
+const ASSETS = ['/', '/index.html', '/styles.css', '/src/app.js', '/src/cloud.js', '/src/core.js', '/src/ecs.js', '/src/ecs-projection.js', '/src/contacts.js', '/src/storage.js', '/src/sync.js', '/src/managed/srd-5.2.1.js', '/src/importers/ddb-parser.js', '/src/importers/ddb-worker.js', '/vendor/pdfjs/pdf.min.mjs', '/vendor/pdfjs/pdf.worker.min.mjs', '/manifest.webmanifest', '/assets/mark.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

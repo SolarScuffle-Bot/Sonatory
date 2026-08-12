@@ -2,10 +2,11 @@
 import { createDefaultItemSources, isSafeMutationPath, parseDecimal } from './core.js';
 
 const DB_NAME = 'sonatory';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = 'vaults';
 const HANDLE_STORE = 'folder-handles';
 const SETTINGS_STORE = 'device-settings';
+const SYNC_STORE = 'cloud-runtime';
 const APPEARANCE_KEY = 'appearance';
 const PANEL_STATE_KEY = 'panel-state';
 const ACTIVE_KEY = 'active-vault';
@@ -136,6 +137,7 @@ function openDatabase() {
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'vault.id' });
       if (!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
       if (!db.objectStoreNames.contains(SETTINGS_STORE)) db.createObjectStore(SETTINGS_STORE);
+      if (!db.objectStoreNames.contains(SYNC_STORE)) db.createObjectStore(SYNC_STORE);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('Could not open local storage.'));
@@ -209,6 +211,27 @@ export async function saveDeviceSettings(settings) {
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(transaction.error || new Error('Could not save device appearance settings.'));
     transaction.onabort = () => reject(transaction.error || new Error('Saving device appearance settings was cancelled.'));
+  });
+  db.close();
+}
+
+/** @param {string} vaultId */
+export async function loadCloudRuntime(vaultId) {
+  const db = await openDatabase();
+  const value = await requestResult(db.transaction(SYNC_STORE, 'readonly').objectStore(SYNC_STORE).get(vaultId));
+  db.close();
+  return value || null;
+}
+
+/** CryptoKey objects are structured-cloned by IndexedDB and never exported to JSON. @param {string} vaultId @param {unknown} runtime */
+export async function saveCloudRuntime(vaultId, runtime) {
+  const db = await openDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(SYNC_STORE, 'readwrite');
+    transaction.objectStore(SYNC_STORE).put(runtime, vaultId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('Could not save encrypted cloud state.'));
+    transaction.onabort = () => reject(transaction.error || new Error('Saving encrypted cloud state was cancelled.'));
   });
   db.close();
 }
@@ -426,4 +449,39 @@ export function setActiveVault(id) {
 
 export function clearActiveVault() {
   localStorage.removeItem(ACTIVE_KEY);
+}
+
+/**
+ * Permanently removes one Vault from this browser and, when connected, its
+ * known Sonatory files from the Vault folder. Folder access is resolved before
+ * local deletion so the UI never reports a partial purge as complete.
+ * @param {import('./core.js').AppState} state
+ */
+export async function purgeVault(state) {
+  validateVaultState(state);
+  const vaultId = state.vault.id;
+  const directory = await storedFolder(vaultId);
+  if (directory) {
+    let permission = await directory.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') permission = await directory.requestPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') throw new Error('Folder access is required to remove this Vault’s mirrored files. Nothing was deleted.');
+    for (const name of [META_FILE, SNAPSHOT_FILE, NEXT_FILE, LAST_GOOD_FILE]) {
+      try { await directory.removeEntry(name); }
+      catch (error) { if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error; }
+    }
+  }
+  const db = await openDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE, HANDLE_STORE, SETTINGS_STORE, SYNC_STORE], 'readwrite');
+    transaction.objectStore(STORE).delete(vaultId);
+    transaction.objectStore(HANDLE_STORE).delete(vaultId);
+    transaction.objectStore(SETTINGS_STORE).delete(PANEL_STATE_KEY);
+    transaction.objectStore(SYNC_STORE).delete(vaultId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('Could not purge the Vault.'));
+    transaction.onabort = () => reject(transaction.error || new Error('Purging the Vault was cancelled.'));
+  });
+  db.close();
+  handleCache.delete(vaultId);
+  if (localStorage.getItem(ACTIVE_KEY) === vaultId) localStorage.removeItem(ACTIVE_KEY);
 }

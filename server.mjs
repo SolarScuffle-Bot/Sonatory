@@ -50,6 +50,7 @@ export function createSonatoryServer() {
         if (request.method === 'POST' && action === 'handshake') { send(200, await space.handshake(await readBody())); return; }
         const token = /^Bearer\s+([A-Za-z0-9]+)$/.exec(String(request.headers.authorization || ''))?.[1] || '';
         if (!space.authorize(token)) throw new RelayError(401, 'authentication_required', 'Complete a signed device handshake before Push or Pull.');
+        if (request.method === 'DELETE' && !action) { relay.delete(kind, guid); response.writeHead(204, { 'Cache-Control': 'no-store' }); response.end(); return; }
         if (request.method === 'GET' && action === 'events') { send(200, space.pull(Number(url.searchParams.get('after') || 0), Number(url.searchParams.get('limit') || 200))); return; }
         if (request.method === 'POST' && action === 'events') { const body = await readBody(); send(200, await space.push(body.envelopes)); return; }
         throw new RelayError(405, 'method_not_allowed', 'Method is not allowed.');

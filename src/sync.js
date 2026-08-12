@@ -58,7 +58,9 @@ export class SyncClient {
   constructor(options) {
     this.endpoint = options.endpoint.replace(/\/$/, '');
     this.identity = options.identity;
-    this.fetch = options.fetchImpl || fetch;
+    // Keep the browser's fetch receiver intact; storing it directly and later
+    // calling `client.fetch()` binds the SyncClient as `this` in Chromium.
+    this.fetch = options.fetchImpl || ((...args) => fetch(...args));
     this.token = '';
     this.actorCounter = 0;
     this.priorDeviceEventHash = '0'.repeat(64);
@@ -66,6 +68,19 @@ export class SyncClient {
     this.canonicalHash = '0'.repeat(64);
     this.remoteHead = 0;
     this.verificationKeys = new Map([[this.identity.actorDeviceGuid, this.identity.signing.publicKey]]);
+  }
+
+  /** @param {{actorCounter?:number,priorDeviceEventHash?:string,canonicalSequence?:number,canonicalHash?:string}} runtime */
+  restoreRuntime(runtime = {}) {
+    this.actorCounter = Number(runtime.actorCounter || 0);
+    this.priorDeviceEventHash = String(runtime.priorDeviceEventHash || '0'.repeat(64));
+    this.canonicalSequence = Number(runtime.canonicalSequence || 0);
+    this.canonicalHash = String(runtime.canonicalHash || '0'.repeat(64));
+    return this;
+  }
+
+  exportRuntime() {
+    return { actorCounter: this.actorCounter, priorDeviceEventHash: this.priorDeviceEventHash, canonicalSequence: this.canonicalSequence, canonicalHash: this.canonicalHash };
   }
 
   async initialize(maxBytes) {
@@ -157,9 +172,21 @@ export class SyncClient {
     for (const record of result.records || []) {
       await this.verifyReceipt(record.envelope, record.receipt, priorHash, record.receipt.canonicalSequence);
       events.push({ payload: await this.decrypt(record.envelope), receipt: record.receipt });
+      if (record.envelope.actorDeviceGuid === this.identity.actorDeviceGuid && Number(record.envelope.actorCounter) > this.actorCounter) {
+        this.actorCounter = Number(record.envelope.actorCounter);
+        this.priorDeviceEventHash = await sha256(canonicalJson(record.envelope));
+      }
       priorHash = record.receipt.canonicalHash;
     }
     if (events.length) { this.canonicalSequence = events.at(-1).receipt.canonicalSequence; this.canonicalHash = events.at(-1).receipt.canonicalHash; }
     return events;
+  }
+
+  async purge() {
+    if (!this.token) await this.handshake();
+    const response = await this.fetch(this.endpoint, { method: 'DELETE', headers: { authorization: `Bearer ${this.token}` } });
+    if (!response.ok) await jsonResponse(response);
+    this.token = '';
+    return true;
   }
 }
