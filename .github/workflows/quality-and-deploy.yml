@@ -1,0 +1,77 @@
+name: Quality and deployment
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonatory-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm run build
+      - run: npm run check
+      - run: npm run verify:dist
+
+  package:
+    name: Package verified site
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - run: npm run build
+      - run: npm run verify:dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonatory-site
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Deploy Cloudflare Pages
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CLOUDFLARE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sonatory-site
+          path: dist
+      - name: Publish verified artifact
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=sonatory --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

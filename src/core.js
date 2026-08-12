@@ -121,6 +121,32 @@ export function syncManagedItems(state) {
   };
   const managedTag = ensureTag('Managed');
   const dndTag = ensureTag('D&D5e');
+  const managedMetadataNames = new Set(SRD_ITEMS.flatMap(definition => [definition.category, managedRarity(definition)]).map(name => name.toLocaleLowerCase()));
+  for (const entity of Object.values(state.entities)) {
+    if (!entity.tags.includes('Tag') || !managedMetadataNames.has(entity.name.toLocaleLowerCase()) || !/\s/u.test(entity.name)) continue;
+    const oldKey = entity.name.toLocaleLowerCase();
+    const compactName = managedTagName(entity.name);
+    const compactKey = compactName.toLocaleLowerCase();
+    const collision = tagsByName.get(compactKey);
+    if (collision && collision.id !== entity.id) {
+      if (!collision.tags.includes(dndTag)) collision.tags.push(dndTag);
+      collision.updatedAt = now;
+      for (const taggedEntity of Object.values(state.entities)) {
+        if (!taggedEntity.tags.includes(entity.id)) continue;
+        taggedEntity.tags = [...new Set(taggedEntity.tags.map(tagId => tagId === entity.id ? collision.id : tagId))];
+        taggedEntity.updatedAt = now;
+      }
+      entity.deleted = true;
+      entity.updatedAt = now;
+      continue;
+    }
+    tagsByName.delete(oldKey);
+    entity.name = compactName;
+    entity.description = `${compactName} groups matching things.`;
+    if (!entity.tags.includes(dndTag)) entity.tags.push(dndTag);
+    entity.updatedAt = now;
+    tagsByName.set(compactKey, entity);
+  }
   const itemTag = tagsByName.get('item')?.id;
   const illustrativeDescriptions = new Set([
     'A dependable blade with a cord-wrapped grip.',
@@ -132,8 +158,8 @@ export function syncManagedItems(state) {
   let added = 0;
   let updated = 0;
   for (const definition of SRD_ITEMS) {
-    const categoryTag = ensureTag(definition.category, [dndTag]);
-    const rarityTag = ensureTag(managedRarity(definition), [dndTag]);
+    const categoryTag = ensureTag(managedTagName(definition.category), [dndTag]);
+    const rarityTag = ensureTag(managedTagName(managedRarity(definition)), [dndTag]);
     const existing = state.entities[definition.id];
     const managed = typeof existing?.managed === 'object' ? existing.managed : null;
     if (existing?.deleted || managed?.override || managed?.detached) continue;
@@ -156,6 +182,10 @@ function managedRarity(definition) {
   return definition.description.match(/^(Common|Uncommon|Rare|Very Rare|Legendary|Artifact)\b/i)?.[1]?.replace(/\b\w/g, character => character.toUpperCase()) || 'Common';
 }
 
+function managedTagName(name) {
+  return String(name).replace(/\s+/gu, '');
+}
+
 function managedGoldValue(cost) {
   const match = String(cost || '').match(/^([\d,.]+)\s*(CP|SP|EP|GP|PP)$/i);
   if (!match) return '0';
@@ -174,7 +204,7 @@ export function managedBaseEntity(state, id) {
   const existing = state.entities[id];
   if (!definition || !existing || typeof existing.managed === 'object' && existing.managed.detached) return null;
   const tagId = name => Object.values(state.entities).find(entity => entity.tags.includes('Tag') && entity.name === name)?.id;
-  const tags = [tagId('Managed'), tagId('D&D5e'), tagId(definition.category), tagId(managedRarity(definition)), tagId('Item')].filter(Boolean);
+  const tags = [tagId('Managed'), tagId('D&D5e'), tagId(managedTagName(definition.category)), tagId(managedTagName(managedRarity(definition))), tagId('Item')].filter(Boolean);
   return {
     ...existing, name: definition.name,
     description: definition.description || '',

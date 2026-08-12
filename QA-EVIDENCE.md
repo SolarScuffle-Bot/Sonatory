@@ -2,13 +2,13 @@
 
 **Status:** Living implementation evidence, not a production-complete declaration  
 **Last updated:** 2026-08-12  
-**Build surface:** unbundled static ES modules from `server.mjs`
+**Build surface:** unbundled static ES modules from `server.mjs`; allowlisted Cloudflare artifact from `npm run build`
 
 This record supplements the normative [Acceptance Matrix](ACCEPTANCE-MATRIX.md). A successful smoke test does not silently mark adjacent requirements as complete. Failures found during exploratory testing are fixed and added to regression coverage where the behavior has a pure or integration-test boundary.
 
 ## Automated verification
 
-`npm run check` currently passes 51 tests covering:
+`npm run check` currently passes 54 tests covering:
 
 - exact-decimal Weight, display beyond IEEE-754 precision, linear all-container totals, and iterative nested-container traversal;
 - containment-cycle rejection, structural stack split/restack, and retained Undo/Redo branches;
@@ -23,6 +23,20 @@ This record supplements the normative [Acceptance Matrix](ACCEPTANCE-MATRIX.md).
 - Web Crypto envelope encryption/signing, receipt verification, pull/decrypt, and tamper rejection through the real HTTP relay, including two separately signed authorized devices verifying one another without trusting the relay head; and
 - the Cloudflare Worker client contract, strict origin policy, hard personal-Vault quota cap, opaque-at-rest records, and Durable Object eviction/rehydration.
 - deterministic same-Container reordering, cross-Container transfer, cycle rejection, exact Undo restoration, and UI contracts for the shared compact row, Pointer Events, independent adjacent Item/Tags actions, two inventory modes, tooltip descriptions, and compact field-icon stats.
+- managed D&D metadata name compaction with stable GUID references, value-before-icon ordering, square Quantity controls, stats/Quantity separation, and bounded wrapping Container Tags.
+
+`npm run build && npm run verify:dist` produces and verifies 211 deployment files (6,130,484 bytes). The verifier resolves every HTML and service-worker runtime reference, rejects tests/temp/source maps/local server code from the artifact, and checks the Cloudflare security-header contract.
+
+## Compact stats, Tags, and controls regression pass — 2026-08-12
+
+Executed against the served application at 1280×720 with a persisted IndexedDB Vault.
+
+- Inventory rows measured 885.6×52 px with zero internal overflow. Decrement and increment measured exactly 24×24 px, and the Quantity group exposed a rendered 0.8 px left divider.
+- DOM order was description, numerical stat, then Quantity. Both Weight rows and linked-Container Things stats visibly rendered `value icon`; compact Grid rendering retains the same contract.
+- A test Container was assigned 18 Tags. Its Tag region wrapped into multiple horizontal rows within a 94 px viewport, scrolled to 238 px internally, and left the inventory and linked-Container sections stationary. Undo restored the original three Tags.
+- The persisted Vault initially exposed old spaced managed categories beside new compact names. Browser exploration caught this; the migration now recognizes the authoritative managed category/rarity vocabulary even when legacy metadata is absent. Reload reduced the Tag manager from 54 to 37 active Tags with `AdventuringGear`, `HeavyArmor`, `MartialMeleeWeapon`, and `VeryRare` and no spaced duplicates.
+- The header Item action displays a tools glyph while remaining immediately adjacent to the independent Tags action.
+- Clicking the Iron Longsword increment changed Quantity 2→3 and total contribution 6→9; Undo restored the prior values.
 
 ## Inventory presentation regression pass — 2026-08-12
 

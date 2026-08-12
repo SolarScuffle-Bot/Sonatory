@@ -17,7 +17,10 @@ Pass conditions:
 - inventory items, linked destinations, and the add slot use the shared compact-row component;
 - Item and Tags remain adjacent, independent header actions at every breakpoint.
 - Inventory exposes exactly two modes: List and Grid.
-- managed D&D definitions carry an exact Value field, a D&D5e-metatagged rarity, and field icon metadata.
+- compact stats render their exact value before their icon, with a divider before Quantity;
+- Quantity decrement/increment controls are equal small squares;
+- managed D&D definitions carry an exact Value field, whitespace-free D&D5e-metatagged category/rarity Tags, and field icon metadata;
+- Container metadata Tags wrap inside a bounded region instead of forming a tall single column;
 - persisted image data and numerical-field image icons are WebP only.
 
 ## 2. Real browser interaction gate
@@ -68,7 +71,7 @@ Pass conditions:
 - `scrollWidth <= clientWidth + 1` for each vertical inventory and for the document;
 - at a narrow panel width, the default inventory becomes one column;
 - at a wide panel width, List remains a single stable column and exposes the description; at narrower widths the description becomes a tooltip without reserving space;
-- Grid mode is visibly denser than List mode and each equal-size tile shows its name plus right-justified icon/value stats without overlap;
+- Grid mode is visibly denser than List mode and each equal-size tile shows its name plus right-justified value/icon stats without overlap;
 - Compact, Normal, and Spacious produce strictly increasing Collection card widths and heights.
 
 ## 4. Visual hierarchy and Gestalt gate
@@ -99,3 +102,7 @@ For every case assert:
 ## 6. Failure harvesting
 
 After the scripted path, inspect browser error logs and take screenshots of the header, compact inventory, active drag state, and post-transfer destination. Any defect found becomes a pure regression test or a UI-contract assertion before the fix is considered complete. Record the executed viewport, observed geometry, and result in `QA-EVIDENCE.md`.
+
+## 7. Release artifact and CI gate
+
+Run `npm run build` and `npm run verify:dist`. The verification must prove every shell/runtime reference exists, no tests, temporary fixtures, source maps, or local server enter the artifact, and Cloudflare security headers are present. GitHub repeats build/check/verification on Node 20 and 22 under Ubuntu and Windows. Production may deploy only the packaged artifact emitted after all matrix jobs pass; a missing Cloudflare opt-in, account ID, or scoped API token skips or blocks deployment rather than bypassing quality.

@@ -295,8 +295,8 @@
   .inventory-row-stat { min-width: 3.2rem; display: flex; align-items: center; justify-content: flex-end; gap: .24rem; border-left: 1px solid var(--border); padding-left: .38rem; }
   .inventory-row-stat .icon { width: .86rem; height: .86rem; color: var(--accent); }
   .inventory-row-stat strong { font-size: .78rem; font-variant-numeric: tabular-nums; }
-  .inventory-row .quantity { min-width: 4.7rem; width: 4.7rem; height: 1.8rem; align-self: center; display: grid; grid-template-columns: 1.55rem 1.6rem 1.55rem; grid-template-rows: 1.8rem; align-items: center; justify-items: center; gap: 0; margin-left: 0; }
-  .inventory-row .quantity button { width: 1.55rem; min-width: 1.55rem; min-height: 1.8rem; border-radius: .38rem; padding: 0; }
+  .inventory-row .quantity { min-width: 5.08rem; width: 5.08rem; height: 1.6rem; align-self: center; display: grid; grid-template-columns: 1.5rem 1.6rem 1.5rem; grid-template-rows: 1.5rem; align-items: center; justify-items: center; gap: 0; margin-left: .08rem; padding-left: .38rem; border-left: 1px solid var(--border); }
+  .inventory-row .quantity > button:not(.quantity-value) { width: 1.5rem; min-width: 1.5rem; height: 1.5rem; min-height: 1.5rem; border-radius: .34rem; padding: 0; }
   .inventory-row .quantity-value, .inventory-row .quantity-input { width: 1.6rem; min-width: 1.6rem; height: 1.7rem; min-height: 1.7rem; border: 0; border-radius: .3rem; padding: 0; background: transparent; text-align: center; font-size: .78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .inventory-row .quantity-value:hover { background: var(--surface-3); }
   .inventory-row .quantity-input { outline: 2px solid var(--accent); background: var(--surface-2); appearance: textfield; }
@@ -359,7 +359,7 @@
   @media (max-width: 420px) {
     .panel-body { padding: .55rem; }
     .inventory-row-stat { display: none; }
-    .inventory-row .quantity { min-width: 4.55rem; width: 4.55rem; }
+    .inventory-row .quantity { min-width: 5.08rem; width: 5.08rem; }
     .destination-key { display: none; }
   }
   @media (max-width: 600px) {
@@ -373,9 +373,21 @@
 
   @container (min-width: 40rem) {
     .panel-overview { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(12rem, .75fr); gap: .8rem; align-items: start; }
-    .panel-overview > .preview-chips { grid-template-columns: 1fr; margin: 0; }
+    .panel-overview > .preview-chips { margin: 0; }
     .inventory-row-description { display: block; }
   }
+
+  .panel-overview > .container-tags {
+    max-height: 5.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: .3rem;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  .panel-overview > .container-tags .chip { flex: 0 1 auto; width: auto; max-width: min(100%, 12rem); }
 
   @container (max-width: 34rem) {
     .field-row { grid-template-columns: minmax(0, 1fr) minmax(5.5rem, .65fr) var(--control) var(--control); }

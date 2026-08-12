@@ -102,6 +102,8 @@ The project produces separate artifacts:
 
 The browser application must remain usable if artifacts 2–4 are unavailable. A compatible custom relay may replace the official relay without changing Vault or Entity identity.
 
+The static application is built from an explicit allowlist and verified before release. GitHub CI runs syntax, domain, persistence, security, relay, importer, HTTP, service-worker, UI-contract, build-graph, and security-header checks on the supported Node maintenance lines under Windows and Linux. A production deployment may consume only the artifact produced after every required quality job passes. The hard-free Cloudflare Pages profile enables no database, analytics, or paid binding by default.
+
 ## 4. Vaults, identity, and onboarding
 
 ### 4.1 Vault identity
@@ -322,12 +324,12 @@ The Container view contains a Container inspector and inventory workspace.
 
 The inspector shows the optional square image on the left, name, description, exact Tags, linked-Container chips, direct entry count, recursively loaded Weight, link count, and relevant actions. Edit, Manage links, and Add item are inline when room permits and collapse into an ellipsis only when necessary.
 
-Inventory defaults to a compact one-column List. Its stable row columns are drag handle, optional image, name/type, description when measured width permits, compact numerical stats, and right-contained Quantity. At narrower widths description collapses without reserving space and remains available as a hover/focus tooltip. Grid is the only alternate mode: equal-size dense tiles show optional image, name, and a small right-justified strip of icon/value stats. There is no separate inventory Carousel mode.
+Inventory defaults to a compact one-column List. Its stable row columns are drag handle, optional image, name/type, description when measured width permits, compact numerical stats, and right-contained Quantity. At narrower widths description collapses without reserving space and remains available as a hover/focus tooltip. Grid is the only alternate mode: equal-size dense tiles show optional image, name, and a small right-justified strip of value/icon stats. There is no separate inventory Carousel mode.
 
 - Images are optional 1:1 media on the left, never an Icon field.
-- Quantity decrement, exact entry, increment, clone, and delete remain inside the item card or row.
+- Quantity decrement and increment use equal small square controls around exact entry. A vertical divider separates the stats region from the Quantity group.
 - Quantity/actions are right-contained in list layout, including on narrow reflow.
-- Every entry exposes Quantity and recursive Weight contribution with compact labelled icons; expanded contexts may spell the labels out.
+- Every entry exposes Quantity and recursive Weight contribution with compact labelled icons. Compact stats always read `value icon` from left to right; expanded contexts may spell the labels out.
 - Ordinary item selection opens compact Item Settings.
 - Container-item selection opens its Container page.
 
@@ -365,7 +367,7 @@ The parent link shown in UI is derived from physical containment rather than red
 
 ### 9.4 Custom numeric fields
 
-Users may add exact-decimal fields with a label, optional display precision, optional bounds, and a presentation icon. The icon is either a short Unicode mark or a user-supplied transparent WebP image. Shipped fields select a meaningful icon. Compact contexts may show only the icon and exact value; its accessible name and tooltip retain the field label. Numeric fields have no formal unit system, formulas, or recursive aggregation in the first release.
+Users may add exact-decimal fields with a label, optional display precision, optional bounds, and a presentation icon. The icon is either a short Unicode mark or a user-supplied transparent WebP image. Shipped fields select a meaningful icon. Compact contexts may show only the exact value followed by its icon; its accessible name and tooltip retain the field label. Numeric fields have no formal unit system, formulas, or recursive aggregation in the first release.
 
 ## 10. Creation, Item Sources, and managed defaults
 
@@ -407,7 +409,7 @@ A managed source is an ordinary collection of ordinary Entities with stable sour
 - The user may compare, accept, reset individual overrides, or detach completely.
 - Deleting a managed record creates a suppression tombstone so refresh cannot resurrect it.
 - The visible Managed Tag is informational; provenance controls behavior.
-- Managed D&D items carry exact D&D5e-metatagged category and rarity Tags. Their Value is an exact nonnegative numerical field normalized to the source's gold-piece context and retains a currency presentation icon. A D&D Beyond match copies both fields and field metadata into the imported ordinary item.
+- Managed D&D items carry exact D&D5e-metatagged category and rarity Tags. Shipped managed Tag names contain no whitespace (`AdventuringGear`, `HeavyArmor`, `VeryRare`); existing spaced managed metadata migrates in place without changing its GUID. User-defined Tags remain free-form. Value is an exact nonnegative numerical field normalized to the source's gold-piece context and retains a currency presentation icon. A D&D Beyond match copies both fields and field metadata into the imported ordinary item.
 - Managed freshness means time since successful check, with greater visibility after 7 and 30 days.
 
 Sonatory may ship correctly attributed SRD 5.1 and SRD 5.2.1 content. It must not distribute proprietary book data, scrape D&D Beyond, direct users to unauthorized datasets, or imply a license. Private user-created content remains user content and is not redistributed by default.

@@ -22,6 +22,7 @@ Future evidence lives under stable IDs matching these rows, with CI artifacts or
 | PR-08 | §1 | No privileged built-in-library/share-pack product subsystem exists; managed defaults and shareable Collections use general Entities. | Product-copy/schema inspection | 4, 9 |
 | PR-09 | §19 | Application, event schema, managed source, importer profile, and relay protocol versions negotiate/migrate independently. | Compatibility/migration matrix | 9 |
 | PR-10 | §20 | No specified behavior is represented by a nonfunctional stub in a production-complete build. | Full matrix review + exploratory audit | 9 |
+| PR-11 | §3 | CI verifies syntax, behavior, deploy graph, and security headers on Node 20/22 under Linux/Windows; Cloudflare production consumes only the verified artifact after every required job passes. | GitHub Actions matrix + artifact/deployment trace | 9 |
 
 ## B. Vault identity, onboarding, and storage
 
@@ -102,7 +103,7 @@ Future evidence lives under stable IDs matching these rows, with CI artifacts or
 
 | ID | Source | Pass criteria | Required evidence | Stage |
 |---|---|---|---|---:|
-| IN-01 | §9 | Container panel shows a responsive item preview grid and useful summary; list mode where used keeps quantity controls inside/right-aligned. | Geometry/interaction tests | 4 |
+| IN-01 | §9 | Container panel shows a responsive inventory and useful summary; List keeps compact square Quantity controls inside/right-aligned with a stats divider, while Grid remains denser. | Geometry/interaction tests | 4 |
 | IN-02 | §9 | Every entry shows its exact total Weight contribution; Container totals include all legal nested descendants. | Reference-model/property tests | 4 |
 | IN-03 | §9 | Weight is exact abstract decimal with no unit definition/conversion UI; contexts may imply a display label only. | Schema/rounding/UI audit | 4 |
 | IN-04 | §9 | Custom numerical fields support label, exact decimal, precision, optional bounds; no formulas/automatic aggregation except Weight. | Validation/round-trip tests | 4 |
@@ -114,6 +115,7 @@ Future evidence lives under stable IDs matching these rows, with CI artifacts or
 | IN-10 | §9 | Direct/indirect recursive containment is blocked before local mutation with a gentle reason; imported/remote cycle is quarantined. | Deep/adversarial cycle tests | 4, 6 |
 | IN-11 | §9 | Quantity changes preserve nonnegative integer invariants, are undoable, and update Weight/fingerprint incrementally. | Property/replay tests | 4 |
 | IN-12 | §9 | Deep profile finishes iteratively without call-stack overflow or exponential recomputation. | Instrumented performance test | 4, 9 |
+| IN-13 | §9 | Every compact stat is ordered exact value then icon; labels remain available to assistive technology and tooltips. | DOM-order/accessibility assertions | 4 |
 
 ## G. Creation, Item Sources, managed defaults, Tags, and Collections
 
@@ -129,6 +131,7 @@ Future evidence lives under stable IDs matching these rows, with CI artifacts or
 | CR-08 | §10 | Bundled D&D source contains only verified/attributed SRD 5.1/5.2.1 material. | Dataset/license diff audit | 4, 9 |
 | CR-09 | §7 | Collection can be saved query or explicit selection using stable GUIDs; missing/tombstoned references remain visible/repairable. | Round-trip/recovery tests | 5 |
 | CR-10 | §8 | Character and Party are exact Tags applied to Containers only; neither is a special class or Group synonym. | Schema/command validation tests | 4 |
+| CR-11 | §10 | Shipped managed D&D metadata Tags contain no whitespace and existing spaced variants migrate in place without changing stable identity. | Managed refresh/migration tests | 4 |
 
 ## H. Search, selection, and contextual actions
 

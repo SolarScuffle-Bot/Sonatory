@@ -32,6 +32,8 @@ test('Item and Tags are persistent adjacent independent header actions', () => {
   const headerGroup = app.match(/<span class="header-create-group"[\s\S]*?<\/span>\s*<span class="header-spacer">/u)?.[0] || '';
   assert.match(headerGroup, /data-action="create-root"/);
   assert.match(headerGroup, /data-action="tags"/);
+  assert.match(headerGroup, /icon\('tools'\)/);
+  assert.doesNotMatch(headerGroup, /icon\('bag'\)/);
   assert.doesNotMatch(headerGroup, /header-optional/);
   assert.match(css, /\.header-create-group\s*\{[^}]*gap:\s*\.35rem;[^}]*border:\s*0/s);
   assert.match(css, /\.header-create-group > button[^}]*border:\s*1px solid/s);
@@ -42,6 +44,19 @@ test('grid cards expose descriptions and compact numerical icon stats', () => {
   assert.match(app, /function renderCompactStats/);
   assert.match(app, /fieldIconImage/);
   assert.match(css, /\.compact-stats\s*\{[^}]*justify-content:\s*flex-end/s);
+});
+
+test('inventory rows put values before icons and separate compact square quantity controls', () => {
+  assert.match(app, /title="Weight"><strong>\$\{formatNumber\(safeWeight\(entity\.id\)\)\}<\/strong>\$\{icon\('mass'\)\}/);
+  assert.match(app, /title="Things"><strong>\$\{childrenOf\(entity\.id\)[\s\S]*?<\/strong>\$\{icon\('bag'\)\}/);
+  assert.match(css, /\.inventory-row \.quantity\s*\{[^}]*border-left:\s*1px solid var\(--border\)/s);
+  assert.match(css, /\.inventory-row \.quantity > button:not\(\.quantity-value\)\s*\{[^}]*width:\s*1\.5rem;[^}]*height:\s*1\.5rem/s);
+});
+
+test('Container Tags use a bounded wrapping region instead of a single tall column', () => {
+  assert.match(app, /class="preview-chips container-tags" aria-label="Tags"/);
+  assert.match(css, /\.panel-overview > \.container-tags\s*\{[^}]*max-height:[^;]+;[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*auto/s);
+  assert.doesNotMatch(css, /\.panel-overview > \.preview-chips\s*\{[^}]*grid-template-columns:\s*1fr/s);
 });
 
 test('density, wheel traversal, images, and inline quantity retain their contracts', () => {

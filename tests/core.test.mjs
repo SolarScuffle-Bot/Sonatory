@@ -117,10 +117,13 @@ test('SRD managed defaults refresh by stable ID without reviving or overwriting 
   assert.equal(bucket.fields.Value, '0.05');
   assert.ok(adamantine.tags.some(id => state.entities[id]?.name === 'Uncommon'));
   assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'D&D5e'));
-  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Martial Melee Weapon'));
+  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'MartialMeleeWeapon'));
   assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Common'));
   const rarity = Object.values(state.entities).find(entity => entity.name === 'Common' && entity.tags.includes('Tag'));
   assert.ok(rarity?.tags.some(id => state.entities[id]?.name === 'D&D5e'));
+  const dndTag = Object.values(state.entities).find(entity => entity.name === 'D&D5e' && entity.tags.includes('Tag'));
+  const managedMetadata = Object.values(state.entities).filter(entity => !entity.deleted && entity.tags.includes('Tag') && entity.tags.includes(dndTag.id));
+  assert.equal(managedMetadata.some(entity => /\s/u.test(entity.name)), false);
   longsword.name = 'My Longsword';
   longsword.managed = { ...longsword.managed, override: true };
   holding.deleted = true;
@@ -145,6 +148,20 @@ test('managed items expose a resettable base and detach into normal local data',
   syncManagedItems(state);
   assert.equal(state.entities[longsword.id].managed.detached, true);
   assert.equal(managedBaseEntity(state, longsword.id), null);
+});
+
+test('managed metadata Tag names compact in place without changing GUID references', () => {
+  const state = createState('Migration', 'Tester');
+  const category = Object.values(state.entities).find(entity => entity.name === 'MartialMeleeWeapon' && entity.tags.includes('Tag'));
+  const longsword = searchEntities(state, '+Managed').find(entity => entity.name === 'Longsword');
+  assert.ok(category && longsword?.tags.includes(category.id));
+  category.name = 'Martial Melee Weapon';
+  category.tags = ['Tag'];
+  syncManagedItems(state);
+  assert.equal(state.entities[category.id].name, 'MartialMeleeWeapon');
+  assert.equal(state.entities[category.id].deleted, undefined);
+  assert.ok(state.entities[category.id].tags.some(id => state.entities[id]?.name === 'D&D5e'));
+  assert.ok(state.entities[longsword.id].tags.includes(category.id));
 });
 
 test('data-defined item source defaults are editable and never resurrect after user deletion', () => {
