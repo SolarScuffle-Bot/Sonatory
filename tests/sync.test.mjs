@@ -25,18 +25,20 @@ test('browser sync client encrypts, signs, pushes, verifies, pulls, and decrypts
     const identity = await createSyncIdentity('vault', 'vault-sync-12345', 'vault-sync-12345', 'device-sync-1234');
     const client = new SyncClient({ endpoint, identity });
     await client.initialize(100_000);
-    await client.handshake();
+    client.token = 'expired-session';
     const payload = { kind: 'Rename', entityId: 'entity-1234', value: 'Private name' };
     const pushed = await client.push(payload);
     assert.notEqual(pushed.envelope.ciphertext, JSON.stringify(payload));
     assert.doesNotMatch(pushed.envelope.ciphertext, /Private|Rename/);
 
     const reader = new SyncClient({ endpoint, identity });
+    reader.token = 'expired-session';
     const pulled = await reader.pull(0);
     assert.deepEqual(pulled.map(event => event.payload), [payload]);
 
     const altered = { ...pushed.envelope, ciphertext: pushed.envelope.ciphertext.slice(0, -1) + (pushed.envelope.ciphertext.endsWith('A') ? 'B' : 'A') };
     await assert.rejects(reader.decrypt(altered), error => error instanceof SyncError && error.code === 'invalid_envelope');
+    reader.token = 'expired-session';
     await reader.purge();
     await assert.rejects(reader.pull(0), error => error instanceof SyncError && error.code === 'not_found');
   } finally { await new Promise(resolve => server.close(resolve)); }

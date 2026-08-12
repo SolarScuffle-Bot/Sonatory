@@ -389,6 +389,9 @@ async function storedFolder(vaultId) {
 export async function chooseVaultFolder(candidate) {
   if (typeof globalThis.showDirectoryPicker !== 'function') throw new Error('Vault folders are not supported by this browser. Use Export Vault instead.');
   const directory = await globalThis.showDirectoryPicker({ id: 'sonatory-vault', mode: 'readwrite', startIn: 'documents' });
+  let permission = await directory.queryPermission({ mode: 'readwrite' });
+  if (permission !== 'granted') permission = await directory.requestPermission({ mode: 'readwrite' });
+  if (permission !== 'granted') throw new Error('Choose Allow so Sonatory can keep this optional folder backup current.');
   /** @type {string[]} */ const names = [];
   for await (const [name] of directory.entries()) names.push(name);
   let metadata = null;
@@ -461,13 +464,18 @@ export async function purgeVault(state) {
   validateVaultState(state);
   const vaultId = state.vault.id;
   const directory = await storedFolder(vaultId);
+  let folderWarning = '';
   if (directory) {
-    let permission = await directory.queryPermission({ mode: 'readwrite' });
-    if (permission !== 'granted') permission = await directory.requestPermission({ mode: 'readwrite' });
-    if (permission !== 'granted') throw new Error('Folder access is required to remove this Vault’s mirrored files. Nothing was deleted.');
-    for (const name of [META_FILE, SNAPSHOT_FILE, NEXT_FILE, LAST_GOOD_FILE]) {
-      try { await directory.removeEntry(name); }
-      catch (error) { if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error; }
+    try {
+      let permission = await directory.queryPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') permission = await directory.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') folderWarning = 'The disconnected folder backup could not be cleaned up.';
+      else for (const name of [META_FILE, SNAPSHOT_FILE, NEXT_FILE, LAST_GOOD_FILE]) {
+        try { await directory.removeEntry(name); }
+        catch (error) { if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error; }
+      }
+    } catch (error) {
+      folderWarning = `The folder backup could not be cleaned up: ${error instanceof Error ? error.message : 'folder access failed'}`;
     }
   }
   const db = await openDatabase();
@@ -484,4 +492,5 @@ export async function purgeVault(state) {
   db.close();
   handleCache.delete(vaultId);
   if (localStorage.getItem(ACTIVE_KEY) === vaultId) localStorage.removeItem(ACTIVE_KEY);
+  return { folderWarning };
 }

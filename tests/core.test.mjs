@@ -119,11 +119,14 @@ test('SRD managed defaults refresh by stable ID without reviving or overwriting 
   const holding = managed.find(entity => entity.name === 'Bag of Holding');
   const basket = managed.find(entity => entity.name === 'Basket');
   const bucket = managed.find(entity => entity.name === 'Bucket');
+  const battleaxe = managed.find(entity => entity.name === 'Battleaxe');
   const adamantine = managed.find(entity => entity.name === 'Adamantine Armor');
-  assert.ok(longsword && holding && basket && bucket && adamantine);
+  assert.ok(longsword && holding && basket && bucket && battleaxe && adamantine);
   assert.equal(longsword.weight, '3');
   assert.equal(holding.weight, '0');
   assert.ok(longsword.description.includes('1d8 Slashing'));
+  assert.doesNotMatch(longsword.description, /^Longsword\b|\b3 lb\. 15 GP$/);
+  assert.equal(battleaxe.description, '1d8 Slashing Versatile (1d10) Topple');
   assert.match(holding.description, /interior space considerably larger/i);
   assert.equal(longsword.fields.Value, '15');
   assert.deepEqual(longsword.fieldMeta.Value, { min: '0', icon: '◈' });
@@ -131,7 +134,10 @@ test('SRD managed defaults refresh by stable ID without reviving or overwriting 
   assert.equal(bucket.fields.Value, '0.05');
   assert.ok(adamantine.tags.some(id => state.entities[id]?.name === 'Uncommon'));
   assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'D&D5e'));
-  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'MartialMeleeWeapon'));
+  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Weapon'));
+  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Martial'));
+  assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Melee'));
+  assert.equal(longsword.tags.some(id => state.entities[id]?.name === 'MartialMeleeWeapon'), false);
   assert.ok(longsword.tags.some(id => state.entities[id]?.name === 'Common'));
   const rarity = Object.values(state.entities).find(entity => entity.name === 'Common' && entity.tags.includes('Tag'));
   assert.ok(rarity?.tags.some(id => state.entities[id]?.name === 'D&D5e'));
@@ -164,23 +170,23 @@ test('managed items expose a resettable base and detach into normal local data',
   assert.equal(managedBaseEntity(state, longsword.id), null);
 });
 
-test('managed metadata Tag names compact in place without changing GUID references', () => {
+test('managed weapon categories decompose into reusable direct Tags', () => {
   const state = createState('Migration', 'Tester');
-  const category = Object.values(state.entities).find(entity => entity.name === 'MartialMeleeWeapon' && entity.tags.includes('Tag'));
   const longsword = searchEntities(state, '+Managed').find(entity => entity.name === 'Longsword');
-  assert.ok(category && longsword?.tags.includes(category.id));
-  category.name = 'Martial Melee Weapon';
-  category.tags = ['Tag'];
+  assert.ok(longsword);
+  const names = longsword.tags.map(id => state.entities[id]?.name);
+  assert.ok(names.includes('Weapon') && names.includes('Martial') && names.includes('Melee'));
+  const legacyId = guid();
+  state.entities[legacyId] = { id: legacyId, name: 'MartialMeleeWeapon', description: '', tags: ['Tag'], parentId: null, container: false, quantity: 1, weight: '0', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  longsword.tags = [...longsword.tags, legacyId];
   syncManagedItems(state);
-  assert.equal(state.entities[category.id].name, 'MartialMeleeWeapon');
-  assert.equal(state.entities[category.id].deleted, undefined);
-  assert.ok(state.entities[category.id].tags.some(id => state.entities[id]?.name === 'D&D5e'));
-  assert.ok(state.entities[longsword.id].tags.includes(category.id));
+  assert.equal(state.entities[legacyId].deleted, true);
+  assert.equal(state.entities[longsword.id].tags.includes(legacyId), false);
 });
 
 test('data-defined item source defaults are editable and never resurrect after user deletion', () => {
   const state = createState('Test', 'Tester');
-  assert.deepEqual(state.itemSources.map(source => source.name), ['Unique', 'Custom', 'Item', 'Created', 'D&D']);
+  assert.deepEqual(state.itemSources.map(source => source.name), ['Unique', 'Custom', 'Created', 'Item', 'D&D']);
   assert.match(state.itemSources[1].description, /Tag/);
   const removedId = state.itemSources[0].id;
   state.itemSources = state.itemSources.slice(1);

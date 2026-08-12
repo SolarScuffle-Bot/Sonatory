@@ -16,15 +16,15 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 export const SCHEMA_VERSION = 1;
 export const MANAGED_ITEM_COUNT = SRD_ITEMS.length;
 export const MANAGED_SOURCE_VERSION = SRD_SOURCE.version;
-export const SOURCE_DEFAULTS_VERSION = 6;
+export const SOURCE_DEFAULTS_VERSION = 7;
 
 /** @returns {ItemSource[]} */
 export function createDefaultItemSources() {
   return [
-    { id: '20000000-0000-4000-8000-000000000001', name: 'Unique', description: 'Create a one-off item for this destination.', behavior: 'create-item', query: '', presetTagNames: ['Unique'], enabled: true },
+    { id: '20000000-0000-4000-8000-000000000001', name: 'Unique', description: 'Create a one-off Item, Container, Character, or Tag for this destination.', behavior: 'custom-create', query: '', presetTagNames: ['Unique'], enabled: true },
     { id: '20000000-0000-4000-8000-000000000002', name: 'Custom', description: 'Create an Item, Container, Character, or Tag.', behavior: 'custom-create', query: '', enabled: true },
-    { id: '20000000-0000-4000-8000-000000000003', name: 'Item', description: 'Browse every reusable item definition you can see.', behavior: 'browse-query', query: '+Item', enabled: true },
     { id: '20000000-0000-4000-8000-000000000004', name: 'Created', description: 'Browse items and Containers created in this Vault.', behavior: 'browse-query', query: '+Created', enabled: true },
+    { id: '20000000-0000-4000-8000-000000000003', name: 'Item', description: 'Browse every reusable item definition you can see.', behavior: 'browse-query', query: '+Item', enabled: true },
     { id: '20000000-0000-4000-8000-000000000005', name: 'D&D', description: 'Browse D&D items or import D&D Beyond inventory.', behavior: 'dnd-tools', query: '+D&D5e', enabled: true, managed: true }
   ];
 }
@@ -93,6 +93,22 @@ export function syncProductDefaults(state) {
     }
     state.sourceDefaultsVersion = 6;
   }
+  if ((state.sourceDefaultsVersion || 0) < 7) {
+    const unique = state.itemSources.find(source => source.id === '20000000-0000-4000-8000-000000000001');
+    if (unique?.description === 'Create a one-off item for this destination.') {
+      unique.description = 'Create a one-off Item, Container, Character, or Tag for this destination.';
+      if (unique.behavior === 'create-item') unique.behavior = 'custom-create';
+      sourcesChanged = true;
+    }
+    const createdIndex = state.itemSources.findIndex(source => source.id === '20000000-0000-4000-8000-000000000004');
+    const itemIndex = state.itemSources.findIndex(source => source.id === '20000000-0000-4000-8000-000000000003');
+    if (createdIndex > itemIndex && itemIndex >= 0) {
+      const [created] = state.itemSources.splice(createdIndex, 1);
+      state.itemSources.splice(itemIndex, 0, created);
+      sourcesChanged = true;
+    }
+    state.sourceDefaultsVersion = 7;
+  }
   return { tagged, sourcesChanged };
 }
 
@@ -121,7 +137,7 @@ export function syncManagedItems(state) {
   };
   const managedTag = ensureTag('Managed');
   const dndTag = ensureTag('D&D5e');
-  const managedMetadataNames = new Set(SRD_ITEMS.flatMap(definition => [definition.category, managedRarity(definition)]).map(name => name.toLocaleLowerCase()));
+  const managedMetadataNames = new Set(SRD_ITEMS.flatMap(definition => [definition.category, ...managedCategoryTagNames(definition.category), managedRarity(definition)]).map(name => name.toLocaleLowerCase()));
   for (const entity of Object.values(state.entities)) {
     if (!entity.tags.includes('Tag') || !managedMetadataNames.has(entity.name.toLocaleLowerCase()) || !/\s/u.test(entity.name)) continue;
     const oldKey = entity.name.toLocaleLowerCase();
@@ -157,16 +173,34 @@ export function syncManagedItems(state) {
   }
   let added = 0;
   let updated = 0;
+  const categoryTags = new Map();
   for (const definition of SRD_ITEMS) {
-    const categoryTag = ensureTag(managedTagName(definition.category), [dndTag]);
+    const categoryKey = definition.category.toLocaleLowerCase();
+    if (!categoryTags.has(categoryKey)) categoryTags.set(categoryKey, managedCategoryTagNames(definition.category).map(name => ensureTag(name, [dndTag])));
+  }
+  for (const category of new Set(SRD_ITEMS.map(definition => definition.category))) {
+    const replacementIds = categoryTags.get(category.toLocaleLowerCase()) || [];
+    if (replacementIds.length < 2) continue;
+    const legacy = tagsByName.get(managedTagName(category).toLocaleLowerCase());
+    if (!legacy || legacy.deleted || !legacy.tags.includes('Tag')) continue;
+    for (const taggedEntity of Object.values(state.entities)) {
+      if (!taggedEntity.tags.includes(legacy.id)) continue;
+      taggedEntity.tags = [...new Set([...taggedEntity.tags.filter(tagId => tagId !== legacy.id), ...replacementIds])];
+      taggedEntity.updatedAt = now;
+    }
+    legacy.deleted = true;
+    legacy.updatedAt = now;
+  }
+  for (const definition of SRD_ITEMS) {
+    const definitionCategoryTags = categoryTags.get(definition.category.toLocaleLowerCase()) || [];
     const rarityTag = ensureTag(managedTagName(managedRarity(definition)), [dndTag]);
     const existing = state.entities[definition.id];
     const managed = typeof existing?.managed === 'object' ? existing.managed : null;
     if (existing?.deleted || managed?.override || managed?.detached) continue;
     const next = {
       ...(existing || {}), id: definition.id, name: definition.name,
-      description: definition.description || '',
-      tags: [managedTag, dndTag, categoryTag, rarityTag, ...(itemTag ? [itemTag] : [])], parentId: null, container: definition.category === 'Container', quantity: 1,
+      description: managedDescription(definition),
+      tags: [managedTag, dndTag, ...definitionCategoryTags, rarityTag, ...(itemTag ? [itemTag] : [])], parentId: null, container: definition.category === 'Container', quantity: 1,
       weight: definition.weight, image: definition.image || null, fields: { Value: managedGoldValue(definition.cost) }, fieldMeta: { Value: { min: '0', icon: '◈' } }, aliases: [...definition.aliases],
       managed: { sourceId: SRD_SOURCE.id, version: SRD_SOURCE.version, key: definition.id },
       createdAt: existing?.createdAt || now, updatedAt: existing?.updatedAt || now
@@ -184,6 +218,21 @@ function managedRarity(definition) {
 
 function managedTagName(name) {
   return String(name).replace(/\s+/gu, '');
+}
+
+function managedCategoryTagNames(category) {
+  const match = String(category).trim().match(/^(?:(Magic|Martial|Simple)\s+)?(?:(Melee|Ranged)\s+)?Weapon$/i);
+  if (!match) return [managedTagName(category)];
+  return [match[1], match[2], 'Weapon'].filter(Boolean).map(name => name.replace(/^\w/, character => character.toUpperCase()));
+}
+
+function managedDescription(definition) {
+  const escapePattern = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let description = String(definition.description || '').trim();
+  description = description.replace(new RegExp(`^${escapePattern(definition.name)}\\s+`, 'i'), '');
+  if (definition.cost && !/^See SRD$/i.test(definition.cost)) description = description.replace(new RegExp(`\\s+${escapePattern(definition.cost)}\\s*$`, 'i'), '');
+  if (definition.weight && definition.weight !== '0') description = description.replace(new RegExp(`\\s+${escapePattern(definition.weight)}\\s+lb\\.\\s*$`, 'i'), '');
+  return description.trim();
 }
 
 function managedGoldValue(cost) {
@@ -204,10 +253,10 @@ export function managedBaseEntity(state, id) {
   const existing = state.entities[id];
   if (!definition || !existing || typeof existing.managed === 'object' && existing.managed.detached) return null;
   const tagId = name => Object.values(state.entities).find(entity => entity.tags.includes('Tag') && entity.name === name)?.id;
-  const tags = [tagId('Managed'), tagId('D&D5e'), tagId(managedTagName(definition.category)), tagId(managedTagName(managedRarity(definition))), tagId('Item')].filter(Boolean);
+  const tags = [tagId('Managed'), tagId('D&D5e'), ...managedCategoryTagNames(definition.category).map(tagId), tagId(managedTagName(managedRarity(definition))), tagId('Item')].filter(Boolean);
   return {
     ...existing, name: definition.name,
-    description: definition.description || '',
+    description: managedDescription(definition),
     tags, parentId: null, container: definition.category === 'Container', quantity: 1, weight: definition.weight,
     image: definition.image || null, fields: { Value: managedGoldValue(definition.cost) }, fieldMeta: { Value: { min: '0', icon: '◈' } }, aliases: [...definition.aliases], deleted: false,
     managed: { sourceId: SRD_SOURCE.id, version: SRD_SOURCE.version, key: definition.id }, updatedAt: new Date().toISOString()

@@ -97,6 +97,40 @@ test('Profile exposes a typed, modal Vault purge and no relay configuration', ()
   assert.doesNotMatch(app, /Cloudflare or custom relay|Power-user relay configuration|Deployment guide/);
 });
 
+test('source browsing exposes every baked filter and prioritizes exact names', () => {
+  const sources = app.slice(app.indexOf('function renderSources'), app.indexOf('function renderCollectionEditor'));
+  assert.match(sources, /utilityHeader\('Add To Inventory'/);
+  assert.doesNotMatch(sources, /data-action="new-source"|New source|Source filter · locked/);
+  assert.match(sources, /aria-label="Required Query Filters">\$\{renderQueryHighlight\(query\)\}/);
+  assert.match(sources, /entity\.name\.toLocaleLowerCase\(\) === normalizedFilter \? 0/);
+  assert.match(sources, /class="editor-identity-row">\$\{imagePicker[\s\S]*?<label>Name/);
+});
+
+test('file inputs keep native selection and use shared styled controls', () => {
+  assert.match(app, /function filePicker\(/);
+  assert.match(app, /target instanceof HTMLInputElement && target\.type === 'file'\) return/);
+  assert.match(app, /filePicker\('ddb-file'/);
+  assert.match(app, /filePicker\('restore-file'/);
+  assert.match(css, /\.file-picker\s*\{[^}]*display:\s*grid/s);
+  assert.match(app, /field-icon-preview[^\n]*icon\('image'\)/);
+});
+
+test('structured-query rendering preserves input metrics and Collection defaults', () => {
+  assert.match(css, /\.query-token\s*\{[^}]*padding:\s*0;[^}]*font:\s*inherit;/s);
+  assert.match(app, /function collectionCreationDefaults\(/);
+  assert.match(app, /parsed\.include\.map/);
+  assert.match(app, /parsed\.containers\.map/);
+  assert.match(app, /presetTagIds:\s*defaults\.presetTagIds/);
+  assert.match(app, /\.\.\.automaticTags, \.\.\.presetTagIds/);
+});
+
+test('destructive actions stay separate and put Purge before Delete', () => {
+  const editor = app.slice(app.indexOf('function renderEditor'), app.indexOf('function renderNumericalField'));
+  assert.match(editor, /class="destructive-actions"[\s\S]*?>Purge<\/button><button class="danger"[\s\S]*?>Delete<\/button>/);
+  assert.match(css, /\.editor-actions\s*\{[^}]*justify-content:\s*space-between/s);
+  assert.match(css, /\.destructive-confirm\s*\{[^}]*justify-content:\s*space-between/s);
+});
+
 test('production declares only the automatic encrypted relay and permits its exact origin', () => {
   const relay = 'https://sonatory-relay.sonatory-solar-scuffle.workers.dev';
   assert.match(index, new RegExp(`<meta name="sonatory-relay" content="${relay.replaceAll('.', '\\.')}/v1/spaces">`));

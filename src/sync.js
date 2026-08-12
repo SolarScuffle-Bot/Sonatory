@@ -100,6 +100,28 @@ export class SyncClient {
     return result;
   }
 
+  /**
+   * Sends one authenticated request and transparently renews an expired
+   * short-lived relay session once.
+   * @param {string} url
+   * @param {RequestInit} [init]
+   */
+  async authenticatedFetch(url, init = {}) {
+    if (!this.token) await this.handshake();
+    const send = () => {
+      const headers = new Headers(init.headers || {});
+      headers.set('authorization', `Bearer ${this.token}`);
+      return this.fetch(url, { ...init, headers });
+    };
+    let response = await send();
+    if (response.status === 401) {
+      this.token = '';
+      await this.handshake();
+      response = await send();
+    }
+    return response;
+  }
+
   /** @param {unknown} payload @param {{capabilityClass?:string,eventSchemaId?:string,eventSchemaVersion?:number,operationId?:string}} [options] */
   async makeEnvelope(payload, options = {}) {
     const header = {
@@ -120,9 +142,8 @@ export class SyncClient {
 
   /** @param {unknown} payload @param {{capabilityClass?:string,eventSchemaId?:string,eventSchemaVersion?:number,operationId?:string}} [options] */
   async push(payload, options) {
-    if (!this.token) await this.handshake();
     const envelope = await this.makeEnvelope(payload, options);
-    const response = await this.fetch(`${this.endpoint}/events`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${this.token}` }, body: JSON.stringify({ envelopes: [envelope] }) });
+    const response = await this.authenticatedFetch(`${this.endpoint}/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelopes: [envelope] }) });
     const result = await jsonResponse(response);
     const receipt = result.receipts?.[0];
     await this.verifyReceipt(envelope, receipt, this.canonicalHash, this.canonicalSequence + 1);
@@ -164,8 +185,7 @@ export class SyncClient {
   /** @param {number} [after] */
   async pull(after = 0) {
     if (after !== 0 && after !== this.canonicalSequence) throw new SyncError('unverified_cursor', 'Pull can resume only from the locally verified synchronization head.');
-    if (!this.token) await this.handshake();
-    const response = await this.fetch(`${this.endpoint}/events?after=${after}&limit=200`, { headers: { authorization: `Bearer ${this.token}` } });
+    const response = await this.authenticatedFetch(`${this.endpoint}/events?after=${after}&limit=200`);
     const result = await jsonResponse(response);
     let priorHash = after === 0 ? '0'.repeat(64) : this.canonicalHash;
     const events = [];
@@ -183,8 +203,7 @@ export class SyncClient {
   }
 
   async purge() {
-    if (!this.token) await this.handshake();
-    const response = await this.fetch(this.endpoint, { method: 'DELETE', headers: { authorization: `Bearer ${this.token}` } });
+    const response = await this.authenticatedFetch(this.endpoint, { method: 'DELETE' });
     if (!response.ok) await jsonResponse(response);
     this.token = '';
     return true;
