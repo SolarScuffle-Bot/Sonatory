@@ -676,12 +676,13 @@
   .activity-tools { display: grid; grid-template-columns: minmax(9rem, .45fr) minmax(12rem, 1fr); gap: .65rem; }
   .activity-entities { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .45rem; }
   .activity-entities .chip { min-height: 2rem; }
-  .onboarding { min-height: 100dvh; display: grid; grid-template-columns: minmax(16rem, .85fr) minmax(20rem, 1.15fr); background: var(--bg); }
-  .onboarding-intro { padding: clamp(2rem, 7vw, 7rem); display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(145deg, var(--accent-soft), var(--bg)); border-right: 1px solid var(--border); }
-  .onboarding-intro h1 { max-width: 10ch; margin: 1rem 0; font-family: var(--font-display); font-size: clamp(3rem, 6vw, 6.5rem); line-height: .86; letter-spacing: -.055em; }
-  .onboarding-intro p { max-width: 34rem; color: var(--muted); font-size: clamp(1rem, 1vw + .75rem, 1.35rem); }
-  .onboarding-form-wrap { padding: clamp(1rem, 5vw, 5rem); display: grid; place-items: center; }
-  .onboarding-form { width: min(100%, 42rem); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); padding: clamp(1rem, 3vw, 2rem); }
+  .onboarding { min-height: 100dvh; display: grid; place-items: center; padding: clamp(.75rem, 4vw, 3rem); background: radial-gradient(circle at 50% 35%, var(--accent-soft), transparent 42%), var(--bg); }
+  .onboarding-form-wrap { width: min(100%, 44rem); display: grid; place-items: center; }
+  .onboarding-form { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); padding: clamp(1rem, 3vw, 2rem); }
+  .onboarding-form h1 { margin: .2rem 0 .6rem; font-family: var(--font-display); font-size: clamp(1.8rem, 4vw, 2.45rem); line-height: 1; letter-spacing: -.025em; }
+  .onboarding-identity-row { display: grid; grid-template-columns: auto repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .7rem; }
+  .onboarding-identity-row .image-picker { width: 4.55rem; flex-basis: 4.55rem; border-radius: .75rem; }
+  .onboarding-identity-row > label { align-self: stretch; }
   .choice-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem; margin: .5rem 0 1rem; }
   .choice { display: block; border: 1px solid var(--border); border-radius: .75rem; padding: .75rem; background: var(--bg-elevated); }
   .choice:has(input:checked) { border-color: var(--border-strong); background: var(--accent-soft); }
@@ -788,9 +789,7 @@
     .recent-tabs { padding-inline: .65rem; }
     .recent-tab-group .recent-tab, .recent-tab-group .tab-close { min-height: 2.75rem; }
     .recent-tab-group .tab-close { min-width: 2.75rem; }
-    .onboarding { grid-template-columns: 1fr; }
-    .onboarding-intro { min-height: 18rem; padding: 2rem; border-right: 0; border-bottom: 1px solid var(--border); }
-    .onboarding-intro h1 { font-size: clamp(3rem, 16vw, 5rem); }
+    .onboarding { padding: clamp(.75rem, 3vw, 1.5rem); }
   }
   @media (max-width: 600px) {
     :root { --gutter: .65rem; --header-h: 3.6rem; --tabs-h: 2.85rem; --control: 2.75rem; --card-w: min(82vw, 18rem); }
@@ -812,8 +811,10 @@
     .choice-cards { grid-template-columns: 1fr; }
     .workspace { padding: .6rem; }
     .panel { border-radius: .85rem; }
-    .onboarding-form-wrap { padding: .75rem; }
     .onboarding-form { padding: 1rem; }
+    .onboarding-identity-row { grid-template-columns: 4.25rem minmax(0, 1fr); }
+    .onboarding-identity-row .image-picker { width: 4.25rem; }
+    .onboarding-identity-row > label:last-child { grid-column: 1 / -1; }
     .recent-tab, .recent-tab-group { min-height: 2.75rem; }
     .recent-tab-group .tab-close { min-width: 2.75rem; }
     .invite-inline { grid-template-columns: 1fr auto; }

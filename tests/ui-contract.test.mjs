@@ -72,3 +72,15 @@ test('density, wheel traversal, images, and inline quantity retain their contrac
   assert.ok(settings.indexOf('<label>Theme') < settings.indexOf('<legend>Accent'));
   assert.ok(settings.indexOf('<legend>Accent') < settings.indexOf('Custom Accent Hue'));
 });
+
+test('onboarding is one centered panel with inline identity image and selectable cloud handoff', () => {
+  const onboarding = app.slice(app.indexOf('async function renderOnboarding'), app.indexOf('function renderShell'));
+  assert.doesNotMatch(onboarding, /onboarding-intro/);
+  assert.match(onboarding, /class="onboarding-identity-row full"/);
+  assert.doesNotMatch(onboarding, /Optional\. If omitted/);
+  assert.match(onboarding, /name="backing" value="cloud">/);
+  assert.doesNotMatch(onboarding, /value="cloud" disabled/);
+  assert.match(app, /backing === 'cloud' \? 'sync-setup' : ''/);
+  assert.match(css, /\.onboarding\s*\{[^}]*place-items:\s*center/s);
+  assert.match(css, /\.onboarding-identity-row\s*\{[^}]*grid-template-columns:\s*auto repeat\(2, minmax\(0, 1fr\)\)/s);
+});

@@ -292,27 +292,21 @@ async function renderOnboarding() {
   const folderSupported = typeof globalThis.showDirectoryPicker === 'function';
   app.innerHTML = `
     <main class="onboarding" id="main">
-      <section class="onboarding-intro" aria-labelledby="welcome-title">
-        <div><span class="eyebrow">Your inventory, wherever you are</span><h1 id="welcome-title">Carry every story.</h1><p>Sonatory keeps characters, parties, packs, and every nested detail quick to reach—online or off.</p></div>
-        <p class="muted">Your browser is the working copy. You choose whether to add a folder or encrypted cloud backing later.</p>
-      </section>
       <section class="onboarding-form-wrap">
-        <form class="onboarding-form" data-form="onboarding">
+        <form class="onboarding-form" data-form="onboarding" aria-labelledby="welcome-title">
           <span class="eyebrow">Create a Vault</span>
-          <h2>One setup, then you’re in.</h2>
+          <h1 id="welcome-title">One setup, then you’re in.</h1>
           <p class="muted">A Vault is both your workspace and your identity. The defaults below are ready to use.</p>
           ${vaults.length ? `<div class="notice"><div><strong>Recent Vaults</strong><p class="muted">Choose one to continue as that identity.</p></div>${vaults.map(vault => `<button type="button" data-action="open-vault" data-id="${vault.id}">${escape(vault.name)}</button>`).join('')}</div>` : ''}
           <div class="form-grid">
-            <label>Display name<input name="displayName" autocomplete="name" maxlength="80" required placeholder="Yohan the Great"></label>
-            <label>Vault name<input name="vaultName" maxlength="80" placeholder="My adventures"></label>
-            <div class="full editor-image-row">${imagePicker('image', null, 'Add profile image')}<span>Optional. If omitted, Sonatory uses your initials.</span></div>
+            <div class="onboarding-identity-row full">${imagePicker('image', null, 'Add profile image')}<label>Display name<input name="displayName" autocomplete="name" maxlength="80" required placeholder="Yohan the Great"></label><label>Vault name<input name="vaultName" maxlength="80" placeholder="My adventures"></label></div>
           </div>
           <fieldset class="settings-group">
             <legend>Backing</legend>
             <div class="choice-cards">
               <label class="choice"><input type="radio" name="backing" value="browser" checked><strong>This device</strong><span>Fast and private. Export a backup when ready.</span></label>
               <label class="choice"><input type="radio" name="backing" value="folder" ${folderSupported ? '' : 'disabled'}><strong>Vault folder</strong><span>${folderSupported ? 'Portable bearer copy, kept current after you grant access.' : 'Use Export Vault in browsers without folder access.'}</span></label>
-              <label class="choice"><input type="radio" name="backing" value="cloud" disabled><strong>Encrypted cloud</strong><span>Hard-free sync arrives with collaboration.</span></label>
+              <label class="choice"><input type="radio" name="backing" value="cloud"><strong>Encrypted cloud</strong><span>Create locally, then connect encrypted sync.</span></label>
             </div>
           </fieldset>
           <fieldset class="settings-group">
@@ -1079,14 +1073,20 @@ async function handleSubmit(form) {
         openedExistingFolder = result.existing && result.state.vault.id !== state.vault.id;
         state = result.state;
       }
+      if (backing === 'cloud') state.cloud.status = 'Setup needed';
       await saveDeviceSettings(state.settings);
       await saveState(state);
       activePanel = '';
       view = 'home';
+      utility = backing === 'cloud' ? 'sync-setup' : '';
+      utilityContext = backing === 'cloud' ? { fromOnboarding: true } : {};
+      utilityStack = [];
+      utilityReturnView = 'home';
+      utilityReturnPanel = '';
       window.scrollTo(0, 0);
       pendingImage = null;
       renderShell();
-      announce(openedExistingFolder ? 'Existing Vault opened from its folder.' : state.vault.folderName ? 'Vault created with a folder mirror.' : 'Vault created and saved locally.');
+      announce(openedExistingFolder ? 'Existing Vault opened from its folder.' : state.vault.folderName ? 'Vault created with a folder mirror.' : backing === 'cloud' ? 'Vault created locally. Finish encrypted cloud setup to begin syncing.' : 'Vault created and saved locally.');
     }
     if (!state) return;
     if (form.dataset.form === 'entity-editor') {

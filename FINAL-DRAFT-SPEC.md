@@ -142,7 +142,7 @@ If a previously opened Vault is still available in browser storage, Sonatory ope
 
 When no cached Vault is available, the first screen presents recent recoverable references when available, **Open Existing Vault**, and **Create New Vault**.
 
-New Vault setup is one responsive panel with responsible defaults already selected. It shows backing choices, identity consequences, display name, optional image, cloud choice, folder choice, recovery information, and optional starter configuration together. Encrypted hosted backup is identified as the recommended resilient choice but is never enabled without explicit selection. Progressive explanations may expand in place, but setup must not become a page-by-page wizard.
+New Vault setup is one centered responsive panel with responsible defaults already selected; it has no separate promotional or explanatory pane. The optional square identity image sits directly left of the display-name field and reserves no separate explanatory row. The panel shows backing choices, identity consequences, display name, optional image, cloud choice, folder choice, recovery information, and optional starter configuration together. Encrypted hosted backup is selectable and identified as the resilient choice, but selecting it first creates the safe local working copy and immediately continues into encrypted-sync setup; the UI must not claim cloud publication until that setup succeeds. Progressive explanations may expand in place, but setup must not become a page-by-page wizard.
 
 No email address or phone number is required for identity, operation, invitations, recovery, or expiry warnings.
 
