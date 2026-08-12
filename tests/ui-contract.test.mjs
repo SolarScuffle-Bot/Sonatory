@@ -46,6 +46,9 @@ test('grid cards expose descriptions and compact numerical icon stats', () => {
   assert.match(app, /function renderCompactStats/);
   assert.match(app, /fieldIconImage/);
   assert.match(css, /\.compact-stats\s*\{[^}]*justify-content:\s*flex-end/s);
+  assert.match(css, /\.dense-item-card \.dense-item-copy > strong\s*\{[^}]*-webkit-line-clamp:\s*2;[^}]*white-space:\s*normal/s);
+  assert.match(css, /\.dense-item-card \.drag-handle\s*\{[^}]*right:\s*\.18rem;[^}]*left:\s*auto/s);
+  assert.match(css, /--inventory-name-size:\s*\.875rem/);
 });
 
 test('inventory rows put values before icons and separate compact square quantity controls', () => {
@@ -121,7 +124,22 @@ test('structured-query rendering preserves input metrics and Collection defaults
   assert.match(app, /parsed\.include\.map/);
   assert.match(app, /parsed\.containers\.map/);
   assert.match(app, /presetTagIds:\s*defaults\.presetTagIds/);
-  assert.match(app, /\.\.\.automaticTags, \.\.\.presetTagIds/);
+  assert.match(app, /function openCollectionCreation\(/);
+  assert.match(app, /collection\.createAction \|\| 'custom'/);
+  assert.match(app, /action === 'character'\) openUtility\('character-setup'/);
+  assert.match(app, /action === 'container'\) openUtility\('editor', \{ \.\.\.context, kind: 'container' \}\)/);
+  assert.match(app, /const inventoryTags =/);
+  assert.match(app, /const characterTags =/);
+  assert.match(app, /container: Boolean\(row\.template\?\.container \|\| current\?\.container\)/);
+  assert.doesNotMatch(app, /activeEntities\(\)\.filter\(entity => !entity\.container && \(entity\.managed/);
+  assert.doesNotMatch(app, /const automaticTags = \[\.\.\.new Set\(\[itemTag\?\.id, createdTag\?\.id, \.\.\.presetTagIds/);
+});
+
+test('Entity editors search Tag choices by ordinary text or Tag metadata queries', () => {
+  assert.match(app, /function renderTagPicker\(/);
+  assert.match(app, /data-action="tag-choice-filter"/);
+  assert.match(app, /searchEntities\(state, query\)\.filter\(entity => entity\.tags\.includes\('Tag'\)\)/);
+  assert.match(css, /\.tag-picker-filter\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/s);
 });
 
 test('destructive actions stay separate and put Purge before Delete', () => {

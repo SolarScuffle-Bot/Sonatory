@@ -89,7 +89,8 @@ function validateQueryBindings(value) {
 
 /** @param {unknown} value */
 function validateCollections(value) {
-  if (!Array.isArray(value) || value.length > 10_000 || new Set(value.map(collection => isRecord(collection) ? collection.id : '')).size !== value.length || !value.every(collection => isRecord(collection) && typeof collection.id === 'string' && GUID_PATTERN.test(collection.id) && isBoundedString(collection.name, 200) && collection.name.trim() && isBoundedString(collection.query, 10_000) && isBoundedString(collection.description, 10_000))) throw new Error('The Vault contains a malformed collection.');
+  const createActions = new Set(['custom','item','container','character','tag','sources']);
+  if (!Array.isArray(value) || value.length > 10_000 || new Set(value.map(collection => isRecord(collection) ? collection.id : '')).size !== value.length || !value.every(collection => isRecord(collection) && typeof collection.id === 'string' && GUID_PATTERN.test(collection.id) && isBoundedString(collection.name, 200) && collection.name.trim() && isBoundedString(collection.query, 10_000) && isBoundedString(collection.description, 10_000) && (collection.createAction === undefined || typeof collection.createAction === 'string' && createActions.has(collection.createAction)))) throw new Error('The Vault contains a malformed collection.');
   for (const collection of value) validateQueryBindings(collection.queryBindings);
 }
 

@@ -282,6 +282,32 @@ function collectionCreationDefaults(collectionId) {
   return { presetTagIds: [...new Set(presetTagIds)], parentId };
 }
 
+function openCollectionCreation(collectionId) {
+  const collection = state?.collections.find(item => item.id === collectionId);
+  if (!collection) return;
+  const defaults = collectionCreationDefaults(collectionId);
+  const context = { collectionId, parentId: defaults.parentId, presetTagIds: defaults.presetTagIds };
+  const action = collection.createAction || 'custom';
+  if (action === 'character') openUtility('character-setup', context);
+  else if (action === 'container') openUtility('editor', { ...context, kind: 'container' });
+  else if (action === 'item') openUtility('editor', { ...context, kind: 'item' });
+  else if (action === 'tag') openUtility('editor', { ...context, kind: 'tag' });
+  else if (action === 'sources') openUtility('sources', context);
+  else openUtility('custom-create', context);
+}
+
+function collectionCreateActionOptions(selected = 'custom') {
+  const options = [
+    ['custom', 'Choose Type'],
+    ['item', 'Item Editor'],
+    ['container', 'Container Editor'],
+    ['character', 'Character Setup'],
+    ['tag', 'Tag Editor'],
+    ['sources', 'Add To Inventory']
+  ];
+  return options.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+}
+
 function popupLayerOpen() {
   const root = utilityStack[0]?.name || utility;
   return POPUP_ROOTS.has(root);
@@ -718,7 +744,7 @@ function renderCollectionEditor() {
   const resultCount = searchEntities(state, queryDraft, /** @type {any} */(utilityContext).queryBindings || collection?.queryBindings || []).length;
   return `<section class="panel active" aria-labelledby="collection-editor-title">${utilityHeader(collection ? 'Collection Settings' : 'Create Collection', 'A saved exact query over your Vault')}
     <form class="panel-body" data-form="collection-editor">
-      <div class="form-grid"><label class="full">Name<input name="name" required maxlength="120" value="${escape(collection?.name || '')}" autofocus></label><label class="full">Description<textarea name="description" maxlength="1000">${escape(collection?.description || '')}</textarea></label><label class="full">Query<span class="query-input-shell"><span class="query-highlight" aria-hidden="true">${renderQueryHighlight(queryDraft)}</span><input class="query-input" name="query" maxlength="10000" value="${escape(queryDraft)}" placeholder='+Character' data-action="collection-query" role="combobox" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-controls="collection-suggestions" aria-expanded="${Boolean(activeQueryOperand(queryDraft))}"></span><span>Type +, -, or = and choose a matching Tag or Container.</span></label><div class="full" id="collection-query-assist">${renderQueryAssist(queryDraft, 'collection')}</div></div>
+      <div class="form-grid"><label class="full">Name<input name="name" required maxlength="120" value="${escape(collection?.name || '')}" autofocus></label><label class="full">Description<textarea name="description" maxlength="1000">${escape(collection?.description || '')}</textarea></label><label class="full">Add Button Opens<select name="createAction">${collectionCreateActionOptions(collection?.createAction || 'custom')}</select><span>The Collection query is applied to the new Entity automatically.</span></label><label class="full">Query<span class="query-input-shell"><span class="query-highlight" aria-hidden="true">${renderQueryHighlight(queryDraft)}</span><input class="query-input" name="query" maxlength="10000" value="${escape(queryDraft)}" placeholder='+Character' data-action="collection-query" role="combobox" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-controls="collection-suggestions" aria-expanded="${Boolean(activeQueryOperand(queryDraft))}"></span><span>Type +, -, or = and choose a matching Tag or Container.</span></label><div class="full" id="collection-query-assist">${renderQueryAssist(queryDraft, 'collection')}</div></div>
       ${collection ? `<div class="source-provenance"><strong><span id="collection-match-count">${resultCount}</span> matching ${resultCount === 1 ? 'result' : 'results'}</strong><p>Changing or deleting this Collection never deletes matching Entities.</p></div><div class="managed-actions"><button class="square-button" type="button" data-action="move-collection" data-id="${collection.id}" data-delta="-1" ${index <= 0 ? 'disabled' : ''} aria-label="Move up" title="Move up">${icon('up')}</button><button class="square-button" type="button" data-action="move-collection" data-id="${collection.id}" data-delta="1" ${index >= state.collections.length - 1 ? 'disabled' : ''} aria-label="Move down" title="Move down">${icon('down')}</button><button type="button" data-action="add-collection-item" data-id="${collection.id}">${icon('plus')} Add Item</button></div>` : '<p class="muted">The Collection appears as one flat carousel and does not own its results.</p>'}
       <div class="form-actions">${collection ? `<button class="danger" type="button" data-action="delete-collection" data-id="${collection.id}">Delete</button>` : ''}<button type="button" data-action="close-utility">Cancel</button><button class="primary" type="submit">${collection ? 'Save' : 'Create'}</button></div>
     </form></section>`;
@@ -738,7 +764,7 @@ function renderCharacterSetup() {
 }
 
 function importPreviewRows(result, targetId = '') {
-  const managed = activeEntities().filter(entity => !entity.container && (entity.managed || entity.tags.some(id => tagName(id) === 'Managed')));
+  const managed = activeEntities().filter(entity => entity.managed || entity.tags.some(id => tagName(id) === 'Managed'));
   const target = targetId ? state.entities[targetId] : null;
   const previous = new Map((target?.importState?.items || []).map(item => [item.key, item]));
   const local = new Map(childrenOf(targetId).map(item => [item.importKey || normalizedItemName(item.name), item]));
@@ -769,12 +795,14 @@ function prepareDdbImport(result, targetId = '') {
   if (!uniqueTag) { const id = guid(); uniqueTag = { id, name: 'Unique', description: 'Unique identifies a local item not resolved to a managed source.', tags: ['Tag'], parentId: null, container: false, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now }; writes.push({ path: `/entities/${id}`, value: uniqueTag }); }
   const itemTag = activeEntities().find(entity => entity.tags.includes('Tag') && entity.name === 'Item');
   const createdTag = activeEntities().find(entity => entity.tags.includes('Tag') && entity.name === 'Created');
+  const containerTag = activeEntities().find(entity => entity.tags.includes('Tag') && entity.name === 'Container');
   const presetTagNames = new Set(/** @type {any} */(utilityContext).presetTagNames || []);
   const presetTagIds = [...(/** @type {any} */(utilityContext).presetTagIds || []), ...activeEntities().filter(entity => entity.tags.includes('Tag') && presetTagNames.has(entity.name)).map(entity => entity.id)];
-  const automaticTags = [...new Set([itemTag?.id, createdTag?.id, ...presetTagIds].filter(Boolean))];
+  const inventoryTags = [...new Set([itemTag?.id, createdTag?.id].filter(Boolean))];
+  const characterTags = [...new Set([characterTag.id, containerTag?.id, ...inventoryTags, ...presetTagIds].filter(Boolean))];
   let target = targetId ? state.entities[targetId] : null;
   const characterId = target?.id || guid();
-  if (!target) target = { id: characterId, name: result.characterName, description: 'Inventory imported locally from a recognized D&D Beyond PDF.', tags: [characterTag.id, ...automaticTags], parentId: /** @type {any} */(utilityContext).parentId || null, container: true, quantity: 1, weight: '0', image: null, fields: {}, createdAt: now, updatedAt: now };
+  if (!target) target = { id: characterId, name: result.characterName, description: 'Inventory imported locally from a recognized D&D Beyond PDF.', tags: characterTags, parentId: /** @type {any} */(utilityContext).parentId || null, container: true, quantity: 1, weight: '0', image: null, fields: {}, createdAt: now, updatedAt: now };
   const previous = new Map((target.importState?.items || []).map(item => [item.key, item]));
   const local = new Map(childrenOf(characterId).map(item => [item.importKey || normalizedItemName(item.name), item]));
   /** @type {Array<{key:string,name:string,quantity:number,weight:string,entityId:string}>} */ const snapshots = [];
@@ -786,8 +814,9 @@ function prepareDdbImport(result, targetId = '') {
     if (row.status === 'Keep manual item') continue;
     if (row.status === 'Keep local edit' && current && prior) { snapshots.push(prior); continue; }
     const id = current?.id || guid();
-    const templateTags = [...new Set([...(row.template ? row.template.tags.filter(tagId => tagName(tagId) !== 'Managed') : [uniqueTag.id]), ...automaticTags])];
-    const entity = { ...(row.template ? structuredClone(row.template) : {}), id, name: row.name, description: row.template?.description || 'Imported from D&D Beyond; no managed item matched this exact name.', tags: templateTags, parentId: characterId, container: false, quantity: row.quantity, weight: row.template?.weight && row.weight === '0' ? row.template.weight : row.weight, image: row.template?.image || null, managed: false, importKey: row.key, fields: structuredClone(row.template?.fields || {}), fieldMeta: structuredClone(row.template?.fieldMeta || {}), createdAt: current?.createdAt || now, updatedAt: now };
+    const baseTags = row.template?.tags || current?.tags || [uniqueTag.id];
+    const templateTags = [...new Set([...baseTags.filter(tagId => !['Managed','Character'].includes(tagName(tagId))), ...inventoryTags])];
+    const entity = { ...(row.template ? structuredClone(row.template) : current ? structuredClone(current) : {}), id, name: row.name, description: row.template?.description || current?.description || 'Imported from D&D Beyond; no managed item matched this exact name.', tags: templateTags, parentId: characterId, container: Boolean(row.template?.container || current?.container), quantity: row.quantity, weight: row.template?.weight && row.weight === '0' ? row.template.weight : row.weight, image: row.template?.image || current?.image || null, managed: false, importKey: row.key, fields: structuredClone(row.template?.fields || current?.fields || {}), fieldMeta: structuredClone(row.template?.fieldMeta || current?.fieldMeta || {}), createdAt: current?.createdAt || now, updatedAt: now };
     writes.push({ path: `/entities/${id}`, value: entity });
     snapshots.push({ key: row.key, name: entity.name, quantity: entity.quantity, weight: entity.weight, entityId: id });
   }
@@ -800,7 +829,7 @@ function prepareDdbImport(result, targetId = '') {
   }
   const fields = { ...(target.fields || {}), 'Reported weight': result.reportedWeight, 'Carrying capacity': result.carryingCapacity };
   const fieldMeta = { ...(target.fieldMeta || {}), 'Reported weight': { min: '0', icon: '⚖' }, 'Carrying capacity': { min: '0', icon: '⚖' } };
-  target = { ...target, name: result.characterName || target.name, fields, fieldMeta, importState: { adapter: 'dnd-beyond-pdf', profileVersion: result.profileVersion, items: snapshots }, updatedAt: now };
+  target = { ...target, name: result.characterName || target.name, tags: [...new Set([...(target.tags || []), ...characterTags])], container: true, fields, fieldMeta, importState: { adapter: 'dnd-beyond-pdf', profileVersion: result.profileVersion, items: snapshots }, updatedAt: now };
   writes.push({ path: `/entities/${characterId}`, value: target });
   return { characterId, characterName: target.name, writes, rows };
 }
@@ -865,6 +894,10 @@ function renderMobileMenu() {
     </nav></section>`;
 }
 
+function renderTagPicker(tags, selectedTagIds, label) {
+  return `<details class="tag-picker"><summary>${escape(label)} · ${selectedTagIds.size} selected</summary><div class="tag-picker-filter"><label class="search-box"><span class="visually-hidden">Find Tags by name or metadata</span><input type="search" data-action="tag-choice-filter" placeholder="Find Tags or type +MetadataTag" autocomplete="off" spellcheck="false"></label><small data-tag-choice-count>${tags.length} available</small></div><div class="tag-options">${tags.map(tag => `<label class="chip" data-tag-choice="${tag.id}">${imageMarkup(tag, 'chip-image')}<input type="checkbox" name="tags" value="${tag.id}" ${selectedTagIds.has(tag.id) ? 'checked' : ''}><span class="chip-title">${escape(tag.name)}</span></label>`).join('')}<p class="tag-choice-empty" data-tag-choice-empty hidden>No matching Tags.</p></div></details>`;
+}
+
 function renderEditor() {
   const context = /** @type {{id?:string,parentId?:string,kind?:string,presetTagName?:string,presetTagNames?:string[],presetTagIds?:string[]}} */(utilityContext);
   const existing = context.id ? state.entities[context.id] : null;
@@ -875,6 +908,10 @@ function renderEditor() {
   const tags = activeEntities().filter(entity => entity.tags.includes('Tag') && entity.name !== 'Tag' && entity.id !== existing?.id).sort((a, b) => a.name.localeCompare(b.name));
   const presetNames = new Set([...(context.presetTagNames || []), ...(context.presetTagName ? [context.presetTagName] : [])]);
   const selectedTagIds = new Set(tags.filter(tag => existing?.tags.includes(tag.id) || presetNames.has(tag.name) || context.presetTagIds?.includes(tag.id)).map(tag => tag.id));
+  if (initialContainer) {
+    const containerTag = tags.find(tag => tag.name === 'Container');
+    if (containerTag) selectedTagIds.add(containerTag.id);
+  }
   const containers = activeEntities().filter(entity => entity.container && !entity.managed && entity.id !== existing?.id && canMove(state, existing?.id || '__new__', entity.id).ok).sort((a, b) => a.name.localeCompare(b.name));
   const managedBase = existing && typeof existing.managed === 'object' ? managedBaseEntity(state, existing.id) : null;
   const showManagedCompare = Boolean(/** @type {any} */(utilityContext).showManagedCompare);
@@ -884,7 +921,7 @@ function renderEditor() {
     const directUses = existing ? activeEntities().filter(entity => entity.id !== existing.id && entity.tags.includes(existing.id)).length : 0;
     const confirmingPurge = Boolean(existing && /** @type {any} */(utilityContext).confirmPurge);
     return `<section class="panel active" aria-labelledby="editor-title">${utilityHeader(isCreate ? 'Create Tag' : 'Tag Settings', 'Reusable label and metadata')}
-      <form class="panel-body editor-form" data-form="entity-editor"><input type="hidden" name="entityMode" value="tag"><div class="form-grid"><div class="editor-identity-row full">${imagePicker('image', existing, existing?.image ? 'Change Tag image' : 'Add Tag image')}<label>Name<input name="name" required maxlength="120" value="${escape(existing?.name || '')}" autofocus><span>Optional image appears beside the Tag wherever it is shown.</span></label></div><label class="full">Description<textarea name="description" maxlength="1000">${escape(existing?.description || '')}</textarea></label><fieldset class="settings-group full"><legend>Metadata Tags</legend><p class="muted">Use other Tags to describe or organize this Tag.</p><div class="selected-tag-summary">${selectedTagIds.size ? tags.filter(tag => selectedTagIds.has(tag.id)).map(tag => `<span class="chip">${imageMarkup(tag, 'chip-image')}<span class="chip-title">${escape(tag.name)}</span></span>`).join('') : '<span class="muted">No metadata Tags selected.</span>'}</div><details class="tag-picker"><summary>Choose metadata Tags · ${selectedTagIds.size} selected</summary><div class="tag-options">${tags.map(tag => `<label class="chip">${imageMarkup(tag, 'chip-image')}<input type="checkbox" name="tags" value="${tag.id}" ${selectedTagIds.has(tag.id) ? 'checked' : ''}><span class="chip-title">${escape(tag.name)}</span></label>`).join('')}</div></details></fieldset></div>
+      <form class="panel-body editor-form" data-form="entity-editor"><input type="hidden" name="entityMode" value="tag"><div class="form-grid"><div class="editor-identity-row full">${imagePicker('image', existing, existing?.image ? 'Change Tag image' : 'Add Tag image')}<label>Name<input name="name" required maxlength="120" value="${escape(existing?.name || '')}" autofocus><span>Optional image appears beside the Tag wherever it is shown.</span></label></div><label class="full">Description<textarea name="description" maxlength="1000">${escape(existing?.description || '')}</textarea></label><fieldset class="settings-group full"><legend>Metadata Tags</legend><p class="muted">Use other Tags to describe or organize this Tag.</p><div class="selected-tag-summary">${selectedTagIds.size ? tags.filter(tag => selectedTagIds.has(tag.id)).map(tag => `<span class="chip">${imageMarkup(tag, 'chip-image')}<span class="chip-title">${escape(tag.name)}</span></span>`).join('') : '<span class="muted">No metadata Tags selected.</span>'}</div>${renderTagPicker(tags, selectedTagIds, 'Choose Metadata Tags')}</fieldset></div>
       ${existing ? `<div class="source-provenance"><strong>${directUses} ${directUses === 1 ? 'use' : 'uses'}</strong><p>Delete hides the Tag from new choices without changing anything already tagged. Undo restores it.</p></div>` : ''}
       ${confirmingDelete ? `<div class="inline-confirm" role="alert"><strong>Delete ${escape(existing.name)}?</strong><span>${directUses ? `${directUses} tagged ${directUses === 1 ? 'thing keeps' : 'things keep'} the hidden Tag.` : 'Nothing visible currently uses it.'} Undo restores the Tag.</span><div><button type="button" data-action="cancel-delete">Cancel</button><button class="danger" type="button" data-action="delete-entity" data-id="${existing.id}">Yes, delete</button></div></div>` : ''}
       <div class="editor-actions"><div class="destructive-actions">${existing ? `<button class="danger purge-button" type="button" data-action="request-purge-tag" data-id="${existing.id}">Purge</button><button class="danger" type="button" data-action="request-delete-entity" data-id="${existing.id}">Delete</button>` : ''}</div><div class="form-actions"><button type="button" data-action="${utilityDismissAction()}">Cancel</button><button class="primary" type="submit">${isCreate ? 'Create' : 'Save'}</button></div></div></form>${confirmingPurge ? `<div class="panel-confirm-layer" role="alertdialog" aria-modal="true" aria-labelledby="purge-title"><div class="confirm-dialog"><span class="eyebrow">Permanent Cleanup</span><h3 id="purge-title">Purge ${escape(existing.name)}?</h3><p>This deletes the Tag and ${directUses} ${directUses === 1 ? 'thing' : 'things'} currently using it. Deleted Containers also hide everything inside them. Undo restores the full change.</p><div class="form-actions destructive-confirm"><button class="danger" data-action="purge-tag" data-id="${existing.id}">Purge ${directUses + 1}</button><button data-action="cancel-purge-tag">Cancel</button></div></div></div>` : ''}</section>`;
@@ -899,7 +936,7 @@ function renderEditor() {
         <div class="compact-number-fields"><label>Quantity<input name="quantity" type="number" min="1" step="1" required value="${existing?.quantity || 1}"></label><label>Weight<input name="weight" inputmode="decimal" maxlength="4096" required value="${escape(existing?.weight || '0')}"></label></div>
         <label>Parent container<select name="parentId"><option value="">None</option>${containers.map(container => `<option value="${container.id}" ${parentId === container.id ? 'selected' : ''}>${escape(container.name)}</option>`).join('')}</select>${existing?.container ? '<span>Its descendants are omitted because recursive containers are not allowed.</span>' : ''}</label>
         <fieldset class="settings-group full numerical-fields"><legend>Numerical fields</legend><p class="muted">Optional exact numbers such as Value, Charges, or Capacity. Units are implied by your context.</p><div data-field-rows>${Object.entries(existing?.fields || {}).map(([name, value]) => renderNumericalField(name, value, existing?.fieldMeta?.[name])).join('')}</div><button type="button" data-action="add-field">${icon('plus')} New</button></fieldset>
-        <fieldset class="settings-group full"><legend>Tags</legend><div class="selected-tag-summary">${selectedTagIds.size ? tags.filter(tag => selectedTagIds.has(tag.id)).map(tag => `<span class="chip">${imageMarkup(tag, 'chip-image')}<span class="chip-title">${escape(tag.name)}</span></span>`).join('') : '<span class="muted">No Tags selected.</span>'}</div><details class="tag-picker"><summary>Choose Tags · ${selectedTagIds.size} selected</summary><div class="tag-options">${tags.map(tag => `<label class="chip">${imageMarkup(tag, 'chip-image')}<input type="checkbox" name="tags" value="${tag.id}" ${selectedTagIds.has(tag.id) ? 'checked' : ''}><span class="chip-title">${escape(tag.name)}</span></label>`).join('')}</div></details></fieldset>
+        <fieldset class="settings-group full"><legend>Tags</legend><div class="selected-tag-summary">${selectedTagIds.size ? tags.filter(tag => selectedTagIds.has(tag.id)).map(tag => `<span class="chip">${imageMarkup(tag, 'chip-image')}<span class="chip-title">${escape(tag.name)}</span></span>`).join('') : '<span class="muted">No Tags selected.</span>'}</div>${renderTagPicker(tags, selectedTagIds, 'Choose Tags')}</fieldset>
       </div>
       ${confirmingDelete ? `<div class="inline-confirm" role="alert"><strong>Delete ${escape(existing.name)}?</strong><span>${directChildren ? `Its ${directChildren} direct ${directChildren === 1 ? 'entry becomes' : 'entries become'} hidden with it.` : 'The item becomes hidden.'} Undo restores the complete state.</span><div><button type="button" data-action="cancel-delete">Cancel</button><button class="danger" type="button" data-action="delete-entity" data-id="${existing.id}">Yes, delete</button></div></div>` : ''}
       <div class="editor-actions"><div class="destructive-actions">${existing ? `<button class="danger" type="button" data-action="request-delete-entity" data-id="${existing.id}">Delete</button>` : ''}</div><div class="form-actions"><button type="button" data-action="${utilityDismissAction()}">Cancel</button><button class="primary" type="submit">${isCreate ? 'Create' : 'Save'}</button></div></div>
@@ -1107,10 +1144,12 @@ function makeEntity(form) {
     if (maximum && compareDecimal(parsedValue, maximum) > 0) throw new Error(`${name} must be at most ${meta.max}.`);
     if (Object.keys(meta).length) fieldMeta[name] = meta;
   }
+  const isContainer = data.get('kind') === 'container';
   const autoTagNames = typeof existing?.managed === 'object' && !existing.managed.detached ? ['Item'] : ['Item', 'Created'];
+  if (isContainer) autoTagNames.push('Container');
   const entity = {
     ...(existing || {}), id, name: String(data.get('name') || '').trim(), description: String(data.get('description') || '').trim(),
-    tags: [...new Set([...data.getAll('tags').map(String), ...activeEntities().filter(entity => entity.tags.includes('Tag') && autoTagNames.includes(entity.name)).map(entity => entity.id)])], parentId, container: data.get('kind') === 'container', quantity, weight,
+    tags: [...new Set([...data.getAll('tags').map(String), ...activeEntities().filter(entity => entity.tags.includes('Tag') && autoTagNames.includes(entity.name)).map(entity => entity.id)])], parentId, container: isContainer, quantity, weight,
     image: pendingImage ?? existing?.image ?? null, fields, fieldMeta,
     managed: existing?.managed,
     createdAt: existing?.createdAt || now, updatedAt: now
@@ -1240,13 +1279,15 @@ async function handleSubmit(form) {
       const name = String(data.get('name') || '').trim();
       const description = String(data.get('description') || '').trim();
       const query = String(data.get('query') || '').trim();
+      const createAction = String(data.get('createAction') || 'custom');
       if (!name) throw new Error('Collection name is required.');
+      if (!['custom','item','container','character','tag','sources'].includes(createAction)) throw new Error('Choose a supported creation panel.');
       const parsed = parseQuery(query);
       const selectedBindings = [...(/** @type {any} */(utilityContext).queryBindings || existing?.queryBindings || [])]
         .filter(binding => parsed[binding.operator]?.some(value => value.localeCompare(binding.displayName, undefined, { sensitivity: 'accent' }) === 0));
       const inferredBindings = resolveQueryBindings(state, query);
       const queryBindings = [...selectedBindings, ...inferredBindings.filter(binding => !selectedBindings.some(selected => selected.operator === binding.operator && selected.displayName === binding.displayName))];
-      const collection = { id: existing?.id || guid(), name, description, query, queryBindings };
+      const collection = { id: existing?.id || guid(), name, description, query, queryBindings, createAction };
       const next = existing ? state.collections.map(item => item.id === existing.id ? collection : item) : [...state.collections, collection];
       commit(state, `${existing ? 'Edit' : 'Create'} Collection ${name}`, [{ path: '/collections', value: next }]);
       utility = ''; utilityContext = {}; view = 'home';
@@ -1299,6 +1340,20 @@ app.addEventListener('input', async event => {
     const count = document.querySelector('#collection-match-count');
     if (count) count.textContent = String(searchEntities(state, query, /** @type {any} */(utilityContext).queryBindings || []).length);
     target.setAttribute('aria-expanded', String(Boolean(activeQueryOperand(query))));
+  }
+  if (target.dataset.action === 'tag-choice-filter') {
+    const picker = target.closest('.tag-picker');
+    const query = target.value.trim();
+    const matching = query ? new Set(searchEntities(state, query).filter(entity => entity.tags.includes('Tag')).map(entity => entity.id)) : null;
+    let visible = 0;
+    picker?.querySelectorAll('[data-tag-choice]').forEach(option => {
+      const show = !matching || matching.has(option.getAttribute('data-tag-choice') || '');
+      option.toggleAttribute('hidden', !show);
+      if (show) visible += 1;
+    });
+    const count = picker?.querySelector('[data-tag-choice-count]');
+    if (count) count.textContent = `${visible} matching`;
+    picker?.querySelector('[data-tag-choice-empty]')?.toggleAttribute('hidden', visible !== 0);
   }
   if (target.dataset.action === 'tag-filter') {
     utilityContext = { ...utilityContext, tagFilter: target.value };
@@ -1451,7 +1506,7 @@ async function handleClick(target) {
   if (action === 'inventory-layout') { inventoryLayouts.set(target.dataset.id || '', target.dataset.layout === 'grid' ? 'grid' : 'list'); renderShell(); }
   if (action === 'create-root') toggleUtility('sources');
   if (action === 'new-collection') openUtility('collection-editor', {});
-  if (action === 'add-collection-item') openUtility('sources', { collectionId: target.dataset.collection || target.dataset.id || '' });
+  if (action === 'add-collection-item') openCollectionCreation(target.dataset.collection || target.dataset.id || '');
   if (action === 'edit-collection') openUtility('collection-editor', { collectionId: target.dataset.id || '' });
   if (action === 'delete-collection') {
     const collection = state.collections.find(item => item.id === target.dataset.id);

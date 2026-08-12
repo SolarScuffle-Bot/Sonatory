@@ -15,6 +15,9 @@ test('Vault validation rejects duplicate or malformed Collection identities', ()
   const malformed = createState('Collections', 'User');
   malformed.collections[0].id = 'not-a-guid';
   assert.throws(() => validateVaultState(malformed), /malformed collection/);
+  const unsupportedPanel = createState('Collections', 'User');
+  unsupportedPanel.collections[0].createAction = 'run-script';
+  assert.throws(() => validateVaultState(unsupportedPanel), /malformed collection/);
 });
 
 test('Vault validation accepts unique friend contacts and rejects malformed or duplicate identities', () => {

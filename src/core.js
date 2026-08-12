@@ -6,7 +6,8 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 /** @typedef {{precision?:number,min?:string,max?:string,icon?:string,iconImage?:string}} NumericFieldMeta */
 /** @typedef {{id:string,name:string,description:string,tags:string[],parentId:string|null,container:boolean,quantity:number,weight:string,image:string|null,order?:number,createdAt:string,updatedAt:string,deleted?:boolean,managed?:boolean|{sourceId:string,version:string,key:string,override?:boolean,detached?:boolean},fields?:Record<string,string>,fieldMeta?:Record<string,NumericFieldMeta>,aliases?:string[],importKey?:string,importState?:{adapter:string,profileVersion:string,items:Array<{key:string,name:string,quantity:number,weight:string,entityId:string}>}}} Entity */
 /** @typedef {{operator:'include'|'exclude'|'containers',entityId:string,displayName:string}} QueryBinding */
-/** @typedef {{id:string,name:string,query:string,queryBindings?:QueryBinding[],description:string}} Collection */
+/** @typedef {'custom'|'item'|'container'|'character'|'tag'|'sources'} CollectionCreateAction */
+/** @typedef {{id:string,name:string,query:string,queryBindings?:QueryBinding[],description:string,createAction?:CollectionCreateAction}} Collection */
 /** @typedef {{id:string,name:string,description:string,behavior:'create-item'|'create-container'|'create-character'|'browse-query'|'ddb-import'|'custom-create'|'dnd-tools',query:string,queryBindings?:QueryBinding[],presetTagNames?:string[],image?:string|null,enabled?:boolean,managed?:boolean}} ItemSource */
 /** @typedef {{path:string,before:unknown,after:unknown}} Change */
 /** @typedef {{id:string,label:string,at:string,kind:'action'|'undo'|'redo',changes:Change[],relatedTo?:string}} HistoryEvent */
@@ -16,7 +17,7 @@ import { BUILTIN_COMPONENTS, projectStateToEcs, queryProjectedGuids } from './ec
 export const SCHEMA_VERSION = 1;
 export const MANAGED_ITEM_COUNT = SRD_ITEMS.length;
 export const MANAGED_SOURCE_VERSION = SRD_SOURCE.version;
-export const SOURCE_DEFAULTS_VERSION = 7;
+export const SOURCE_DEFAULTS_VERSION = 10;
 
 /** @returns {ItemSource[]} */
 export function createDefaultItemSources() {
@@ -41,14 +42,20 @@ export function syncProductDefaults(state) {
     state.entities[id] = entity; tagsByName.set(name.toLocaleLowerCase(), entity); return id;
   };
   const itemTag = ensureTag('Item', 'Item marks an Entity that can appear in inventory. Containers may also be Items.');
+  const containerTag = ensureTag('Container', 'Container marks an Item that can hold other Items.');
   const createdTag = ensureTag('Created', 'Created marks local user-editable inventory definitions.');
   ensureTag('Tag', 'Tags label and organize items, Containers, and other Tags.');
   ensureTag('Unique', 'Unique marks an item with no managed-source match.');
   let tagged = 0;
+  const characterTag = tagsByName.get('character')?.id;
   for (const entity of Object.values(state.entities)) {
     if (entity.tags.includes('Tag')) continue;
     if (!entity.tags.includes(itemTag)) { entity.tags.push(itemTag); tagged += 1; }
+    if (entity.container && !entity.tags.includes(containerTag)) { entity.tags.push(containerTag); tagged += 1; }
+    if (!entity.container && entity.tags.includes(containerTag)) { entity.tags = entity.tags.filter(tagId => tagId !== containerTag); tagged += 1; }
+    if (!entity.container && entity.importKey && characterTag && entity.tags.includes(characterTag)) { entity.tags = entity.tags.filter(tagId => tagId !== characterTag); tagged += 1; }
     if ((!entity.managed || typeof entity.managed === 'object' && entity.managed.detached) && !entity.tags.includes(createdTag)) { entity.tags.push(createdTag); tagged += 1; }
+    entity.tags = [...new Set(entity.tags)];
   }
   let sourcesChanged = false;
   if (!state.sourceDefaultsVersion) {
@@ -109,6 +116,32 @@ export function syncProductDefaults(state) {
     }
     state.sourceDefaultsVersion = 7;
   }
+  if ((state.sourceDefaultsVersion || 0) < 8) {
+    for (const collection of state.collections) {
+      if (collection.createAction) continue;
+      if (collection.query === '+Character') collection.createAction = 'character';
+      else if (collection.query === '+Party' || collection.query === '+Bag') collection.createAction = 'container';
+      else collection.createAction = 'custom';
+    }
+    sourcesChanged = true;
+    state.sourceDefaultsVersion = 8;
+  }
+  if ((state.sourceDefaultsVersion || 0) < 9) {
+    const builtInActions = new Map([['Characters\u0000+Character', 'character'], ['Parties\u0000+Party', 'container'], ['Bags\u0000+Bag', 'container']]);
+    for (const collection of state.collections) {
+      const builtInAction = builtInActions.get(`${collection.name}\u0000${collection.query}`);
+      if (builtInAction) collection.createAction = /** @type {CollectionCreateAction} */(builtInAction);
+    }
+    sourcesChanged = true;
+    state.sourceDefaultsVersion = 9;
+  }
+  if ((state.sourceDefaultsVersion || 0) < 10) {
+    const container = tagsByName.get('container');
+    const dnd = tagsByName.get('d&d5e');
+    if (container && dnd) container.tags = container.tags.filter(tagId => tagId !== dnd.id);
+    sourcesChanged = true;
+    state.sourceDefaultsVersion = 10;
+  }
   return { tagged, sourcesChanged };
 }
 
@@ -164,6 +197,7 @@ export function syncManagedItems(state) {
     tagsByName.set(compactKey, entity);
   }
   const itemTag = tagsByName.get('item')?.id;
+  const containerTag = tagsByName.get('container')?.id;
   const illustrativeDescriptions = new Set([
     'A dependable blade with a cord-wrapped grip.',
     'A crimson restorative in a square glass vial.'
@@ -176,7 +210,7 @@ export function syncManagedItems(state) {
   const categoryTags = new Map();
   for (const definition of SRD_ITEMS) {
     const categoryKey = definition.category.toLocaleLowerCase();
-    if (!categoryTags.has(categoryKey)) categoryTags.set(categoryKey, managedCategoryTagNames(definition.category).map(name => ensureTag(name, [dndTag])));
+    if (!categoryTags.has(categoryKey)) categoryTags.set(categoryKey, managedCategoryTagNames(definition.category).map(name => ensureTag(name, name === 'Container' ? [] : [dndTag])));
   }
   for (const category of new Set(SRD_ITEMS.map(definition => definition.category))) {
     const replacementIds = categoryTags.get(category.toLocaleLowerCase()) || [];
@@ -200,7 +234,7 @@ export function syncManagedItems(state) {
     const next = {
       ...(existing || {}), id: definition.id, name: definition.name,
       description: managedDescription(definition),
-      tags: [managedTag, dndTag, ...definitionCategoryTags, rarityTag, ...(itemTag ? [itemTag] : [])], parentId: null, container: definition.category === 'Container', quantity: 1,
+      tags: [managedTag, dndTag, ...definitionCategoryTags, rarityTag, ...(itemTag ? [itemTag] : []), ...(definition.category === 'Container' && containerTag ? [containerTag] : [])], parentId: null, container: definition.category === 'Container', quantity: 1,
       weight: definition.weight, image: definition.image || null, fields: { Value: managedGoldValue(definition.cost) }, fieldMeta: { Value: { min: '0', icon: '◈' } }, aliases: [...definition.aliases],
       managed: { sourceId: SRD_SOURCE.id, version: SRD_SOURCE.version, key: definition.id },
       createdAt: existing?.createdAt || now, updatedAt: existing?.updatedAt || now
@@ -798,13 +832,14 @@ export function createState(vaultName, displayName, preferences = {}) {
     return id;
   };
   makeTag('Tag', 'Tags label and organize items, Containers, and other Tags.');
+  makeTag('Container', 'Container marks an Item that can hold other Items.');
   makeTag('Character', 'Character groups matching things.');
   makeTag('Party', 'Party groups matching things.');
   makeTag('Bag', 'Bag groups matching things.');
   state.collections = [
-    { id: guid(), name: 'Characters', description: 'People whose inventories you manage.', query: '+Character' },
-    { id: guid(), name: 'Parties', description: 'Shared travel and campaign inventories.', query: '+Party' },
-    { id: guid(), name: 'Bags', description: 'Containers nested throughout your Vault.', query: '+Bag' }
+    { id: guid(), name: 'Characters', description: 'People whose inventories you manage.', query: '+Character', createAction: 'character' },
+    { id: guid(), name: 'Parties', description: 'Shared travel and campaign inventories.', query: '+Party', createAction: 'container' },
+    { id: guid(), name: 'Bags', description: 'Containers nested throughout your Vault.', query: '+Bag', createAction: 'container' }
   ];
   syncManagedItems(state);
   syncProductDefaults(state);

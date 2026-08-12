@@ -22,11 +22,37 @@ test('new production Vaults contain only starter structure and managed definitio
   const localContent = Object.values(state.entities).filter(entity => !entity.tags.includes('Tag') && !entity.managed);
   assert.deepEqual(localContent, []);
   assert.deepEqual(state.collections.map(collection => collection.name), ['Characters', 'Parties', 'Bags']);
+  assert.deepEqual(state.collections.map(collection => collection.createAction), ['character', 'container', 'container']);
+  const containerTag = Object.values(state.entities).find(entity => entity.name === 'Container' && entity.tags.includes('Tag'));
+  assert.ok(containerTag);
+  assert.equal(containerTag.tags.some(id => state.entities[id]?.name === 'D&D5e'), false);
+  assert.ok(Object.values(state.entities).filter(entity => entity.container).every(entity => entity.tags.includes(containerTag.id)));
   assert.deepEqual(state.groups, []);
   assert.deepEqual(state.friends, []);
   assert.deepEqual(state.history.events, []);
   assert.deepEqual(state.cloud, { enabled: true, status: 'Automatic' });
   assert.ok(searchEntities(state, '+Managed').length >= 416);
+});
+
+test('product migration exposes Container as a component Tag and removes leaked Character tags from imported children', async () => {
+  const { createState: createProductionState } = await import('../src/core.js');
+  const state = createProductionState('Migration', 'Tester');
+  const characterTag = Object.values(state.entities).find(entity => entity.name === 'Character' && entity.tags.includes('Tag'));
+  const containerTag = Object.values(state.entities).find(entity => entity.name === 'Container' && entity.tags.includes('Tag'));
+  assert.ok(characterTag && containerTag);
+  const now = new Date().toISOString();
+  const characterId = guid();
+  const childId = guid();
+  state.entities[characterId] = { id: characterId, name: 'Imported Hero', description: '', tags: [characterTag.id, characterTag.id], parentId: null, container: true, quantity: 1, weight: '0', image: null, createdAt: now, updatedAt: now };
+  state.entities[childId] = { id: childId, name: 'Shortsword', description: '', tags: [characterTag.id], parentId: characterId, container: false, quantity: 1, weight: '2', image: null, importKey: 'shortsword', createdAt: now, updatedAt: now };
+  state.collections.forEach(collection => { delete collection.createAction; });
+  state.sourceDefaultsVersion = 7;
+  syncProductDefaults(state);
+  assert.equal(state.entities[characterId].tags.filter(id => id === characterTag.id).length, 1);
+  assert.ok(state.entities[characterId].tags.includes(containerTag.id));
+  assert.equal(state.entities[childId].tags.includes(characterTag.id), false);
+  assert.equal(state.entities[childId].tags.includes(containerTag.id), false);
+  assert.deepEqual(state.collections.map(collection => collection.createAction), ['character', 'container', 'container']);
 });
 
 test('recursive weight includes quantities and nested container contents', () => {
