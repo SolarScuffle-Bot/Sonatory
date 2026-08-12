@@ -79,14 +79,19 @@ function extractItems(widgets) {
     const key = fieldKey(widget.name);
     const value = text(widget.value);
     if (!value) continue;
-    const indexed = /(equipment|additionalequipment|item)(name|qty|quantity|weight)?(\d+)$/.exec(key);
+    // D&D Beyond has shipped the same 2014 sheet layout with multiple field-name
+    // revisions. Current exports use compact `Eq Name0` / `Eq Qty0` /
+    // `Eq Weight0` names, while older exports used `EquipmentName1`. Attuned
+    // rows use the same triplet shape and are inventory too.
+    const indexed = /(equipment|additionalequipment|item|eq|attuned)(name|qty|quantity|weight)?(\d+)$/.exec(key);
     if (indexed) {
-      const row = rows.get(`${widget.page}:${indexed[3]}`) || { page: widget.page, y: widget.rect?.[1] || 0 };
+      const rowKey = `${widget.page}:${indexed[1]}:${indexed[3]}`;
+      const row = rows.get(rowKey) || { page: widget.page, y: widget.rect?.[1] || 0 };
       const kind = indexed[2] || 'name';
       if (kind === 'qty' || kind === 'quantity') row.quantity = value;
       else if (kind === 'weight') row.weight = value;
       else row.name = value;
-      rows.set(`${widget.page}:${indexed[3]}`, row);
+      rows.set(rowKey, row);
       continue;
     }
     if (/^(equipment|additionalequipment)$/.test(key)) loose.push(...value.split(/\r?\n|;/).map(text).filter(Boolean));
@@ -97,9 +102,15 @@ function extractItems(widgets) {
     results.push(separated ? { name: text(separated[1]), quantity: positiveWhole(separated[2]), weight: exactNumber(separated[3]) } : { name: line, quantity: 1, weight: '0' });
   }
   const combined = new Map();
+  const repeatedRows = new Set();
   for (const item of results) {
     if (!item.name || /^(name|qty|quantity|weight)$/i.test(item.name)) continue;
     const key = item.name.toLocaleLowerCase();
+    const rowSignature = `${key}\u0000${item.quantity}\u0000${item.weight}`;
+    // Current D&D Beyond PDFs can repeat the exact same AcroForm inventory
+    // row later on the page. It is a rendering artifact, not another stack.
+    if (repeatedRows.has(rowSignature)) continue;
+    repeatedRows.add(rowSignature);
     const prior = combined.get(key);
     if (prior && prior.weight === item.weight) prior.quantity += item.quantity;
     else if (!prior) combined.set(key, item);

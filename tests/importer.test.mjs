@@ -20,6 +20,18 @@ test('recognized D&D Beyond export is extracted locally with progress', async ()
   assert.deepEqual(progress, [{ page: 1, total: 3 }, { page: 2, total: 3 }, { page: 3, total: 3 }]);
 });
 
+test('current D&D Beyond Eq and Attuned fields import without duplicating repeated form rows', async () => {
+  const result = await parseDdbPdf(await fixture('synthetic-ddb-current-export.pdf'));
+  assert.equal(result.characterName, 'Current Ranger');
+  assert.equal(result.reportedWeight, '28');
+  assert.equal(result.carryingCapacity, '195');
+  assert.deepEqual(result.items, [
+    { name: 'Ring of Testing', quantity: 1, weight: '0' },
+    { name: 'Studded Leather', quantity: 1, weight: '13' },
+    { name: 'Z Watchbook Journal', quantity: 1, weight: '1' }
+  ]);
+});
+
 test('generic PDF is rejected without returning partial data', async () => {
   await assert.rejects(
     parseDdbPdf(await fixture('synthetic-generic-sheet.pdf')),

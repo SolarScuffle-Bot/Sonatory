@@ -63,6 +63,45 @@ def recognized():
     pdf.save()
 
 
+def current_field_names():
+    output = ROOT / "synthetic-ddb-current-export.pdf"
+    pdf = canvas.Canvas(str(output), pagesize=letter, pageCompression=1)
+    label(pdf, "CHARACTER NAME", 36, 730)
+    field(pdf, "CharacterName", "Current Ranger", 36, 700, 220)
+    footer(pdf)
+    pdf.showPage()
+
+    label(pdf, "CHARACTER NAME", 36, 730)
+    label(pdf, "EQUIPMENT", 36, 660, 14)
+    label(pdf, "WEIGHT CARRIED", 36, 625)
+    label(pdf, "ENCUMBERED", 190, 625)
+    label(pdf, "PUSH/DRAG/LIFT", 330, 625)
+    label(pdf, "NAME QTY WEIGHT", 36, 590)
+    field(pdf, "Weight Carried", "28 lb.", 36, 600, 90)
+    field(pdf, "Encumbered", "195 lb.", 190, 600, 90)
+    field(pdf, "PushDragLift", "390 lb.", 330, 600, 90)
+    field(pdf, "Eq Name0", "Studded Leather", 36, 550, 180)
+    field(pdf, "Eq Qty0", "1", 225, 550, 45)
+    field(pdf, "Eq Weight0", "13 lb.", 280, 550, 55)
+    field(pdf, "Eq Name1", "Z Watchbook Journal", 36, 520, 180)
+    field(pdf, "Eq Qty1", "1", 225, 520, 45)
+    field(pdf, "Eq Weight1", "1 lb.", 280, 520, 55)
+    field(pdf, "Eq Name2", "Z Watchbook Journal", 36, 490, 180)
+    field(pdf, "Eq Qty2", "1", 225, 490, 45)
+    field(pdf, "Eq Weight2", "1 lb.", 280, 490, 55)
+    field(pdf, "Attuned Name1", "Ring of Testing", 36, 460, 180)
+    field(pdf, "Attuned Qty1", "1", 225, 460, 45)
+    field(pdf, "Attuned Weight1", "--", 280, 460, 55)
+    footer(pdf)
+    pdf.showPage()
+
+    label(pdf, "CHARACTER NAME", 36, 730)
+    label(pdf, "ADDITIONAL EQUIPMENT", 36, 660, 14)
+    label(pdf, "NAME QTY WEIGHT", 36, 620)
+    footer(pdf)
+    pdf.save()
+
+
 def generic():
     output = ROOT / "synthetic-generic-sheet.pdf"
     pdf = canvas.Canvas(str(output), pagesize=letter)
@@ -76,4 +115,5 @@ def generic():
 
 if __name__ == "__main__":
     recognized()
+    current_field_names()
     generic()
